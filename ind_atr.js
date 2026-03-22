@@ -1,6 +1,6 @@
 /**
  * ATR (Average True Range) Indicator
- * Измеряет волатильность цены
+ * Measures price volatility
  */
 
 function calcATR(candles, period = 120, smoothPeriod = 60) {
@@ -11,13 +11,13 @@ function calcATR(candles, period = 120, smoothPeriod = 60) {
   const atr = [];
   const tr = []; // True Range
 
-  // Вычислим True Range для каждой свечи
+  // Calculate True Range for each candle
   for (let i = 0; i < candles.length; i++) {
     const current = candles[i];
     let trValue;
 
     if (i === 0) {
-      // Первая свеча: TR = High - Low
+      // First candle: TR = High - Low
       trValue = current.high - current.low;
     } else {
       const prev = candles[i - 1];
@@ -34,15 +34,15 @@ function calcATR(candles, period = 120, smoothPeriod = 60) {
 
     tr.push(trValue);
 
-    // Вычислим ATR как SMA от TR
+    // Calculate ATR as SMA of TR
     if (i < period - 1) {
       atr.push(null);
     } else if (i === period - 1) {
-      // Первый ATR: простое среднее
+      // First ATR: simple average
       const sum = tr.slice(0, period).reduce((a, b) => a + b, 0);
       atr.push(sum / period);
     } else {
-      // Сглаживание: (PrevATR * (period - 1) + CurrentTR) / period
+      // Smoothing: (PrevATR * (period - 1) + CurrentTR) / period
       const prevATR = atr[i - 1];
       const smoothedATR = (prevATR * (period - 1) + trValue) / period;
       atr.push(smoothedATR);
@@ -54,7 +54,7 @@ function calcATR(candles, period = 120, smoothPeriod = 60) {
     return atr;
   }
 
-  // Доп. сглаживание ATR через EMA, чтобы убрать резкие всплески на графике.
+  // Additional smoothing of ATR via EMA to reduce spikes on the chart.
   const k = 2 / (sp + 1);
   const smoothed = new Array(atr.length).fill(null);
   let prev = null;
@@ -77,7 +77,7 @@ function calcATR(candles, period = 120, smoothPeriod = 60) {
 }
 
 /**
- * Экспорт для использования в стратегии
+ * Export for use in strategy
  */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { calcATR };

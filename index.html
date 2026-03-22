@@ -1,8 +1,8 @@
 
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
-    <title>namoduL 0.2.1</title>
+    <title>namoduL 0.2.2</title>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="style.css">
 
@@ -10,12 +10,13 @@
 <body>
     <div id="topbar">
         <div class="menu-item">
-            <button id="range-btn" class="nav-btn">1M ▾</button>
+            <button id="range-btn" class="nav-btn">3M ▾</button>
             <div class="dropdown">
                 <div class="ind-row header">Range</div>
                 <div class="ind-row" onclick="setRange('1D')">1D</div>
                 <div class="ind-row" onclick="setRange('1W')">1W</div>
                 <div class="ind-row" onclick="setRange('1M')">1M</div>
+                <div class="ind-row" onclick="setRange('3M')">3M</div>
                 <div class="ind-row" onclick="setRange('1Y')">1Y</div>
             </div>
         </div>
@@ -72,7 +73,7 @@
                 <button class="nav-btn strategy-btn" onclick="resetStrategyCode()">Reset</button>
                 <button class="nav-btn strategy-btn" onclick="applyStrategyCode()">Apply</button>
             </div>
-            <textarea class="code-editor" id="strategy-code-editor" placeholder="// Код из strategy-core.js будет загружен автоматически"></textarea>
+            <textarea class="code-editor" id="strategy-code-editor" placeholder="// Code from strategy-core.js will be loaded automatically"></textarea>
         </div>
     </div>
 
@@ -97,8 +98,8 @@
     <script src="./ind_renderer.js"></script>
     <script src="./prov-twelvedata.js"></script>
     <script src="./prov-local.js?v=20260320b"></script>
-    <script src="./main.js"></script>
     <script src="./strategy-params.js"></script>
+    <script src="./main.js"></script>
     <script src="./strategy-core-context.js"></script>
     <script src="./strategy-core-indicators.js"></script>
     <script src="./strategy-core-signals.js"></script>

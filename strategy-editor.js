@@ -11,11 +11,29 @@
     }
 
     function syncIndicatorSelectionFromStrategyParams() {
-        const checkbox = document.querySelector('#indicator-menu input[data-id="BB"]');
-        if (checkbox && !checkbox.checked) {
-            checkbox.checked = true;
-            window.toggleIndicator('BB', true);
-        }
+        const strategyParams = (window.Strategy && window.Strategy.params)
+            || (window.StrategyParams && typeof window.StrategyParams.getDefaultParams === 'function'
+                ? window.StrategyParams.getDefaultParams()
+                : {});
+
+        const idMap = {
+            useSMA: 'SMA',
+            useBB: 'BB',
+            useATR: 'ATR',
+            useMACD: 'MACD',
+            useStochastic: 'Stochastic'
+        };
+
+        Object.entries(idMap).forEach(([flag, id]) => {
+            const want = Boolean(strategyParams[flag]);
+            const cb = document.querySelector(`#indicator-menu input[data-id="${id}"]`);
+            if (cb && cb.checked !== want) {
+                cb.checked = want;
+            }
+            if (typeof window.toggleIndicator === 'function') {
+                window.toggleIndicator(id, want);
+            }
+        });
     }
 
     function refreshActiveIndicators(options = {}) {

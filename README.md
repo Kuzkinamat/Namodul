@@ -1,85 +1,76 @@
-# FOREX strategy tester / trading signal bot
+# BO strategy tester / trading signal bot
 
-Веб-приложение для тестирования торговых стратегий на форекс с использованием библиотеки Lightweight Charts v 5.1.0
+A web application for testing binary options (BO) trading strategies using the Lightweight Charts library v5.1.0.
 
-Версия 0.1.0
-## Возможности
+Version 0.2.0
+## Features
 
-- Загрузка данных из Twelve Data API
-- Загрузка локальных данных из JS файлов
-- Отображение свечных графиков с индикаторами (SMA, Bollinger Bands, Stochastic, MACD)
-- Тестирование стратегий на исторических данных
-- Визуализация сигналов и графика баланса
-- Гибкая настройка диапазона и таймфрейма
-- Редактор кода стратегии
+- Load data from the Twelve Data API
+- Load local data from JS files
+- Display candlestick charts with indicators (SMA, Bollinger Bands, Stochastic, MACD)
+- Backtest strategies on historical data
+- Visualize trade signals and balance/equity chart
+- Flexible range and timeframe settings
+- Strategy code editor
 
-## В разработке:
-Применение кода из окна редактора по кнопке Run.
+## In development
+Apply code from the editor window using the Run button.
 
+## Usage
 
+1. Open `index.html` in your browser.
+2. Choose the data range and timeframe.
+3. Select the data source:
+   - **Twelve Data API** – requires an API key (included in code)
+   - **Local JS** – local data converted from CSV files
+4. When selecting a source, the pair list updates and is filtered according to the selected timeframe.
+5. Select a currency pair.
+6. Selecting a pair loads data from the chosen source respecting the selected range.
+7. Enable indicators and strategies via the menu.
+8. Run the strategy backtest.
+9. Modify indicator parameters in the strategy editor and click Apply to redraw indicators.
+10. Modify the strategy code and click Run.
 
-## Использование
+## Automatic loading
+## Local data (ES modules)
+The app dynamically loads data via ES modules. Data files must be ES modules that export the candlestick array as the default export.
 
-1. Откройте `index.html` в браузере.
-2. Выберите диапазон загружаемых данных и таймфрейм.
-3. Выберите источник данных:
-   - **Twelve Data API** – требуется API-ключ (уже встроен в код)
-   - **Local JS** – локальные данные, сконвертированные из CSV
-4. При выборе источника список пар обновляется и фильтруется в соответствии с TF
-5. Выберите валютную пару.
-6. При выборе пары происходит загрузка данных из источника с учётом Range.
-7. Включите индикаторы и стратегии через меню.
-8. Запустите тестирование стратегии.
-9. Измените параметры индикаторов в редакторе стратегии и нажмите Apply для перерисовки индикаторов.
-10. Измените код стратегии и нажмите Run
+When the app starts and local JS data files are detected (for example, `EURUSD_M5_data.js`, `CADCHF_M5_data.js`), the app will automatically:
+- Scan available modules
+- Set the source to **Local JS**
+- Select the appropriate timeframe (derived from the filename)
+- Load the data and display the chart
 
-## Автоматическая загрузка
-## Локальные данные (ES-модули)
-Приложение использует динамическую загрузку данных через ES-модули. Файлы данных должны быть в формате ES-модуля, экспортирующего массив свечей по умолчанию.
+## Project structure
 
-При открытии приложения, если обнаружены JS файлы с данными (например, `EURUSD_M5_data.js`, `CADCHF_M5_data.js`), приложение автоматически:
-- Просканирует доступные модули
-- Установит источник **Local JS**
-- Выберет соответствующий таймфрейм (из имени файла)
-- Загрузит данные и отобразит график.
+- `index.html` – main UI
+- `main.js` – application logic, chart control, data providers
+- `prov-twelvedata.js` – Twelve Data API provider
+- `ind.js` – indicator calculations (Stochastic, MACD, EMA)
+- `strategy-core.js` – editable strategy code
+- `strategy.js` – strategy orchestration and UI glue
+- `csv-to-js.js` – CSV-to-JS converter script
+- `EURUSD_M5_data.js` – converted data example
+- `lightweight-charts.standalone.production.js` – charting library (external)
 
+## Dependencies
 
+- Lightweight Charts v5.1.0 (included)
+- A modern browser with ES6 support
 
+## Notes
 
-## Структура проекта
+- The Twelve Data API has rate limits. The free tier allows about 800 requests per day.
+- Local data does not require an internet connection and is suitable for testing large historical periods.
+- All indicator calculations are performed client-side.
 
-- `index.html` – основной интерфейс
-- `main.js` – логика приложения, управление графиком, провайдеры данных
-- `prov-twelvedata.js` – провайдер данных Twelve Data API
-- `ind.js` – расчет индикаторов (Stochastic, MACD, EMA)
-- `strategy-core.js` – изменяемый код стратегии
-- `strategy.js` – остальной код стратегии
-- `csv-to-js.js` – скрипт конвертации CSV в JS
-- `EURUSD_M5_data.js` – сконвертированные данные
-- `lightweight-charts.standalone.production.js` – библиотека графиков (внешняя)
-
-## Зависимости
-
-- Lightweight Charts v5.1.0 (включена в проект)
-- Современный браузер с поддержкой ES6
-
-## Примечания
-
-- Twelve Data API имеет лимиты на количество запросов. Для бесплатного тарифа – 800 запросов в день.
-- Локальные данные не требуют интернет-соединения и подходят для тестирования на больших исторических периодах.
-- Все вычисления индикаторов выполняются на стороне клиента.
-
-
-
-# Конвертор файлов csv-js - `csv-to-js.js`
-### Формат CSV
+# CSV to JS converter - `csv-to-js.js`
+### CSV format
 YYYY-MM-DD HH:MM,open,high,low,close,volume
-Пример:
+Example:
 2025-06-30 22:15,1.17841,1.17874,1.17834,1.17871,181
-### Конвертация
-1. Поместите CSV файл(ы) в корневую директорию проекта.
-2. Запустите скрипт:
+### Conversion
+1. Place your CSV file(s) into the project root directory.
+2. Run the script:
    node csv-to-js.js
-3. Скрипт создаст JS файлы с суффиксом `_data.js` в формате ES-модуля (экспорт по умолчанию). **Не требуется** подключать их в `index.html` через `<script>`, так как они загружаются динамически при выборе источника Local JS.
-
-
+3. The script will create JS files with the `_data.js` suffix in ES module format (default export). These files do not need to be included in `index.html` with a `<script>` tag because they are loaded dynamically when Local JS is selected as the data source.

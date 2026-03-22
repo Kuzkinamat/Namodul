@@ -6,27 +6,27 @@ function calculateBollingerBands(data, period = 20, stdDev = 2) {
     const bb = [];
     let sum = 0, sumOfSquares = 0;
     
-    // Инициализация для первого окна
+    // Initialization for the first window
     for (let i = 0; i < period; i++) {
         const val = data[i].close;
         sum += val;
         sumOfSquares += val * val;
     }
     
-    // Считаем первые period-1 значения как null
+    // Set first period-1 values to null
     for (let i = 0; i < period - 1; i++) {
         bb.push({ time: data[i].time, upper: null, middle: null, lower: null });
     }
     
-    // Скользящее окно для остальных значений
+    // Sliding window for remaining values
     for (let i = period - 1; i < data.length; i++) {
         if (i > period - 1) {
-            // Удаляем самый старый элемент из окна
+            // Remove the oldest element from the window
             const oldVal = data[i - period].close;
             sum -= oldVal;
             sumOfSquares -= oldVal * oldVal;
             
-            // Добавляем новый элемент в окно
+            // Add new element to the window
             const newVal = data[i].close;
             sum += newVal;
             sumOfSquares += newVal * newVal;
@@ -34,7 +34,7 @@ function calculateBollingerBands(data, period = 20, stdDev = 2) {
         
         const mean = sum / period;
         const variance = (sumOfSquares / period) - (mean * mean);
-        const std = Math.sqrt(Math.max(0, variance)); // Math.max для защиты от численных ошибок
+        const std = Math.sqrt(Math.max(0, variance)); // Math.max to guard against numerical errors
 
         bb.push({
             time: data[i].time,

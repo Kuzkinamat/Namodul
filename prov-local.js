@@ -120,7 +120,6 @@ window.LocalJsProvider = {
                             };
                         }
                     });
-                    console.log('Сканирование через index.json: найдено', modules.length, 'файлов', modules);
                     addLog(`Index manifest loaded: ${modules.length} data files.`);
                     return modules;
                 }

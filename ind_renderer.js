@@ -150,7 +150,7 @@ window.IndicatorRenderers = (function() {
 
     function renderATR(data, params, pane, LightweightCharts, addLog) {
         if (typeof window.calcATR !== 'function') {
-            if (addLog) addLog('ATR: функция calcATR не найдена');
+            if (addLog) addLog('ATR: calcATR function not found');
             return;
         }
 
@@ -177,11 +177,11 @@ window.IndicatorRenderers = (function() {
             )
             : window.calcATR(data);
         if (!Array.isArray(atrData) || atrData.length !== data.length) {
-            if (addLog) addLog('ATR: некорректные данные индикатора');
+            if (addLog) addLog('ATR: invalid indicator data');
             return;
         }
 
-        // Всегда отображаем ATR в процентах: ATR / Close * 100.
+        // Always display ATR as percentage: ATR / Close * 100.
         const atrView = atrData.map((v, i) => {
             const close = data[i] && Number.isFinite(data[i].close) ? data[i].close : null;
             return Number.isFinite(v) && Number.isFinite(close) && close > 0 ? (v / close) * 100 : null;
@@ -195,7 +195,7 @@ window.IndicatorRenderers = (function() {
         else if (maxAtr < 0.1) precision = 3;
         const minMove = Math.pow(10, -precision);
 
-        // ATR рендерим как линию в отдельной панели, аналогично осцилляторам.
+        // Render ATR as a line in a separate pane, similar to oscillators.
         const line = pane.chart.addSeries(LightweightCharts.LineSeries, {
             color: '#8ec5ff',
             lineWidth: 2,

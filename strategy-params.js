@@ -7,24 +7,24 @@ window.StrategyParams = (function() {
     const DEFAULT_PARAMS = Object.freeze({
         baseStake:          1,
         filterTradingHours: true,
-        expirationMinutes:  15,
+        expirationMinutes:  10,
         winPayout:          0.8,
 
         useSMA:             false,
-        useBB:              false,
+        useBB:              true,
         useATR:             false,
         useMACD:            false,
-        useStochastic:      false,
+        useStochastic:      true,
 
-        sequenceCandles:    3,
-        signalWindowCandles: 4,
+        sequenceCandles:    2,
+        signalWindowCandles: 3,
 
-        useMartingale:      1,
-        martingaleMultiplier: 2,
+        useMartingale:      true,
+        martingaleMultiplier: 3,
         martingaleMaxSteps: 4,
 
-        stopLossCnt:        2,
-        stopLossPeriod:     60,        // в барах (свечах)
+        stopLossCnt:        3,
+        stopLossPeriod:     10,
 
         rules: `
 // c(lag)        — свеча:      .open .high .low .close
@@ -40,6 +40,7 @@ const stopLossCnt = Math.max(0, Number(params.stopLossCnt ?? 4));
 const stopLossPeriod = Math.max(1, Number(params.stopLossPeriod ?? 60));
 
 const cv0 = c(0), cv1 = c(-1), cv2 = c(-2), cv3 = c(-3), cv4 = c(-4), cv5 = c(-5);
+const st0 = ind && typeof ind === 'function' ? ind('stochastic', 0) : null;
 
 function isBull(v) { return v && v.close > v.open; }
 function isBear(v) { return v && v.close < v.open; }
@@ -50,6 +51,7 @@ if (cv0 && cv1 && cv2 && cv3 && cv4 && cv5) {
         lossCountWithinPeriods(stopLossPeriod) >= stopLossCnt;
 
     if (!stopActive) {
+        const stochOK = st0 && Number.isFinite(st0.k) && st0.k > 20 && st0.k < 80;
         // Поглощение на свече cv4 относительно cv5
         const bullishEngulfing =
             isBear(cv5) && isBull(cv4) &&
@@ -69,17 +71,17 @@ if (cv0 && cv1 && cv2 && cv3 && cv4 && cv5) {
             cv3.close > cv2.close && cv2.close > cv1.close;
 
         // Коррекционная свеча (только цвет тела)
-        const bullishCorrection = isBear(cv0);
+        const bullishCorrection = isBear(cv0);true
         const bearishCorrection = isBull(cv0);
 
         // Все условия должны уложиться в первые 5 свечей после поглощения
         const withinWindow = signalWindowCandles >= (seqCount + 1);
 
-        if (withinWindow && bullishEngulfing && bullishSequence && bullishCorrection) {
+        if (withinWindow && stochOK && bullishEngulfing && bullishSequence && bullishCorrection) {
             buy = 1;
         }
 
-        if (withinWindow && bearishEngulfing && bearishSequence && bearishCorrection) {
+        if (withinWindow && stochOK && bearishEngulfing && bearishSequence && bearishCorrection) {
             sell = 1;
         }
     }

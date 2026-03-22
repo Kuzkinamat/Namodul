@@ -5,7 +5,7 @@ let data = [];
 window.data = data; // expose globally
 let MARKER_TIMESTAMPS = [];
 window.MARKER_TIMESTAMPS = MARKER_TIMESTAMPS; // экспорт для strategy.js
-let currentRange = '1M', currentTimeframe = '5m', currentSource = 'none', currentPair = '', curM = 0, isSyncing = false;
+let currentRange = '3M', currentTimeframe = '5m', currentSource = 'none', currentPair = '', curM = 0, isSyncing = false;
 window.curM = curM; // экспорт для strategy.js
 const activePanes = {}, mainSeriesRefs = {};
 
@@ -24,6 +24,7 @@ window.DataUtils = {
         '1D': 24 * 60,          // 1440
         '1W': 7 * 24 * 60,      // 10080
         '1M': 30 * 24 * 60,     // 43200
+        '3M': 3 * 30 * 24 * 60, // 129600
         '1Y': 365 * 24 * 60     // 525600
     },
     // Minutes in each timeframe (short format)
@@ -128,10 +129,31 @@ async function autoStartStrategyAndBalanceOnFirstOpen() {
                 }
             };
 
-            ensureIndicatorEnabled('BB');
-            ensureIndicatorEnabled('Stochastic');
-            ensureIndicatorDisabled('ATR');
+            // Read params (prefer Strategy.params if strategy already initialized,
+            // otherwise use StrategyParams defaults) and enable indicators accordingly.
+            const strategyParams = (window.Strategy && window.Strategy.params)
+                || (window.StrategyParams && typeof window.StrategyParams.getDefaultParams === 'function'
+                    ? window.StrategyParams.getDefaultParams()
+                    : {});
 
+            const idMap = {
+                useSMA: 'SMA',
+                useBB: 'BB',
+                useATR: 'ATR',
+                useMACD: 'MACD',
+                useStochastic: 'Stochastic'
+            };
+
+            Object.entries(idMap).forEach(([flag, id]) => {
+                const want = Boolean(strategyParams[flag]);
+                if (want) {
+                    ensureIndicatorEnabled(id);
+                } else {
+                    ensureIndicatorDisabled(id);
+                }
+            });
+
+            // Start strategy after indicators are set
             window.Strategy.testStrategy();
 
             const balanceCheckbox = document.querySelector('#indicator-menu input[data-id="Balance"]');
@@ -593,7 +615,7 @@ window.onresize();
         const pair = targetDataset.pair;
 
         // Force requested defaults
-        window.setRange('1M');
+        window.setRange('3M');
         await window.setTimeframe('5m');
         
         // Set source to local
@@ -607,7 +629,7 @@ window.onresize();
 
         scheduleAutoStartStrategyAndBalanceOnFirstOpen();
         
-        addLog(`Auto-loaded ${pair} (5m) from local data, range 1M.`);
+        addLog(`Auto-loaded ${pair} (5m) from local data, range 3M.`);
     } else {
         // No local data, start with empty source
         window.setDataSource('none');

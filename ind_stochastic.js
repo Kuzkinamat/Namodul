@@ -10,12 +10,12 @@ function calculateStochastic(data, kPeriod = 5, dPeriod = 3, slowing = 3) {
         });
     }
 
-    // Первый проход: вычисляем K% с использованием скользящего окна для min/max
+    // First pass: compute %K using a sliding window for min/max
     const kValues = [];
     let lowestLow = data[0].low;
     let highestHigh = data[0].high;
     
-    // Инициализация первого окна
+    // Initialize first window
     for (let i = 0; i < kPeriod; i++) {
         if (data[i].low < lowestLow) lowestLow = data[i].low;
         if (data[i].high > highestHigh) highestHigh = data[i].high;
@@ -23,7 +23,7 @@ function calculateStochastic(data, kPeriod = 5, dPeriod = 3, slowing = 3) {
     
     for (let i = kPeriod - 1; i < data.length; i++) {
         if (i > kPeriod - 1) {
-            // Переинициализировать min/max для нового окна
+            // Reinitialize min/max for the new window
             lowestLow = data[i - kPeriod + 1].low;
             highestHigh = data[i - kPeriod + 1].high;
             
@@ -38,19 +38,19 @@ function calculateStochastic(data, kPeriod = 5, dPeriod = 3, slowing = 3) {
         kValues.push({ time: data[i].time, value: k, index: i });
     }
 
-    // Второй проход: применяем slowing фактор к K% используя скользящее окно
+    // Second pass: apply slowing factor to %K using a sliding window
     const slowedKValues = [];
     if (slowing > 1 && kValues.length >= slowing) {
         let sum = 0;
         
-        // Инициализация первого окна
+        // Initialize first window
         for (let i = 0; i < slowing; i++) {
             sum += kValues[i].value;
         }
         
         for (let i = slowing - 1; i < kValues.length; i++) {
             if (i > slowing - 1) {
-                // Удаляем старый элемент и добавляем новый
+                // Remove old element and add new one
                 sum -= kValues[i - slowing].value;
                 sum += kValues[i].value;
             }
@@ -76,18 +76,18 @@ function calculateStochastic(data, kPeriod = 5, dPeriod = 3, slowing = 3) {
         stochasticData[kv.index].k = kv.value;
     });
 
-    // Третий проход: вычисляем D% (SMA от K%) используя скользящее окно
+    // Third pass: compute %D (SMA of %K) using a sliding window
     if (slowedKValues.length >= dPeriod) {
         let sum = 0;
         
-        // Инициализация первого окна
+        // Initialize first window
         for (let i = 0; i < dPeriod; i++) {
             sum += slowedKValues[i].value;
         }
         
         for (let i = dPeriod - 1; i < slowedKValues.length; i++) {
             if (i > dPeriod - 1) {
-                // Удаляем старый элемент и добавляем новый
+                // Remove old element and add new one
                 sum -= slowedKValues[i - dPeriod].value;
                 sum += slowedKValues[i].value;
             }

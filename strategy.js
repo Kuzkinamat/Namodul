@@ -1,5 +1,5 @@
 // strategy.js
-// Оркестрация стратегии: запуск теста, маркеры, PnL и связь с UI
+// Strategy orchestration: running tests, markers, PnL and UI integration
 
 (function() {
     'use strict';
@@ -117,9 +117,9 @@
                 }
             } else if (typeof series.setMarkers === 'function') {
                 series.setMarkers(markers);
-                log('Маркеры созданы через setMarkers');
+                log('Markers created via setMarkers');
             } else {
-                log('Ошибка: не найден метод для отображения маркеров');
+                log('Error: no method found to display markers');
             }
         },
 
@@ -208,7 +208,7 @@
         createConditionContext: function(i, data, indicators, tradeHistory) {
             const core = getCore();
             if (!core || typeof core.createConditionContext !== 'function') {
-                log('Ошибка: StrategyCore.createConditionContext недоступна');
+                log('Error: StrategyCore.createConditionContext not available');
                 return null;
             }
 
@@ -218,7 +218,7 @@
         evaluateCondition: function(condition, context) {
             const core = getCore();
             if (!core || typeof core.evaluateCondition !== 'function') {
-                log('Ошибка: StrategyCore.evaluateCondition недоступна');
+                log('Error: StrategyCore.evaluateCondition not available');
                 return false;
             }
 
@@ -228,20 +228,20 @@
         calculateSignals: function(data) {
             try {
                 if (!Array.isArray(data) || data.length < 30) {
-                    log('Недостаточно данных для расчета сигналов (нужно минимум 30 свечей)');
+                    log('Not enough data to calculate signals (minimum 30 candles required)');
                     return [];
                 }
 
                 const core = getCore();
                 if (!core || typeof core.calculateIndicators !== 'function' || typeof core.calculateSignals !== 'function') {
-                    log('Ошибка: StrategyCore не готов к расчету сигналов');
+                    log('Error: StrategyCore is not ready to calculate signals');
                     return [];
                 }
 
                 this.params = syncParams(this.params);
 
                 if (window.debugLog) {
-                    log('Отладочный лог включен для calculateSignals');
+                    log('Debug logging enabled for calculateSignals');
                 }
 
                 const indicators = core.calculateIndicators(data, this.params);
@@ -255,7 +255,7 @@
                 const signals = core.calculateSignals(data, this.params, indicators, this.tradeHistory);
                 return signals;
             } catch (error) {
-                log(`Ошибка расчета сигналов: ${error.message}`);
+                log(`Error calculating signals: ${error.message}`);
                 return [];
             }
         },
@@ -269,11 +269,11 @@
                 series.markerPrimitive.setMarkers([]);
             } else if (typeof series.setMarkers === 'function') {
                 series.setMarkers([]);
-                log('Маркеры очищены (setMarkers)');
+                log('Markers cleared (setMarkers)');
             } else if (window.LightweightCharts && typeof window.LightweightCharts.createSeriesMarkers === 'function') {
                 window.LightweightCharts.createSeriesMarkers(series, []);
             } else {
-                log('Не удалось очистить маркеры: нет подходящего метода');
+                log('Failed to clear markers: no suitable method');
             }
 
             if (window.MARKER_TIMESTAMPS) {
@@ -290,23 +290,23 @@
 
         plotSignals: function(chart, series, signals) {
             if (!chart || !series) {
-                log('Ошибка: график или серия не доступны для отображения маркеров');
+                log('Error: chart or series not available to display markers');
                 return;
             }
             if (!signals || signals.length === 0) {
-                log('Нет сигналов для отображения');
+                log('No signals to display');
                 return;
             }
 
             const baseStake = this.params.baseStake || 1;
             
-            // Создаём map результатов и ставки сделки по времени и типу для быстрого поиска
+            // Create maps of trade results and stakes by time and type for quick lookup
             const tradeResultMap = {};
             const tradeStakeMap = {};
             if (this.tradeHistory && Array.isArray(this.tradeHistory)) {
                 for (const trade of this.tradeHistory) {
                     const key = `${trade.time}_${trade.type}`;
-                    tradeResultMap[key] = trade.result; // 'win' или 'loss'
+                    tradeResultMap[key] = trade.result; // 'win' or 'loss'
                     tradeStakeMap[key] = Number(trade.stake) || 0;
                 }
             }
@@ -315,7 +315,7 @@
             signals.forEach(signal => {
                 const strength = signal.type === 'buy' ? signal.buyStrength : signal.sellStrength;
 
-                // Определяем цвет маркера по результату сделки
+                // Determine marker color by trade result
                 const tradeKey = `${signal.time}_${signal.type}`;
                 const tradeResult = tradeResultMap[tradeKey];
                 const dealSize = tradeStakeMap[tradeKey] || (baseStake * strength);
@@ -323,11 +323,11 @@
                 
                 let markerColor;
                 if (tradeResult === 'win') {
-                    markerColor = '#90EE90'; // Зелёный для win
+                    markerColor = '#90EE90'; // Green for win
                 } else if (tradeResult === 'loss') {
-                    markerColor = '#FFD700'; // Жёлтый для loss
+                    markerColor = '#FFD700'; // Yellow for loss
                 } else {
-                    // Если результат неизвестен, используем цвет по типу
+                    // If result unknown, use color by type
                     markerColor = signal.type === 'buy' ? '#26a69a' : '#ef5350';
                 }
 
@@ -365,7 +365,7 @@
             const balance = [];
             let currentBalance = initialDeposit;
 
-            if (!signals || signals.length === 0) {
+                if (!signals || signals.length === 0) {
                 for (let i = 0; i < data.length; i++) {
                     balance.push({
                         time: data[i].time,
@@ -374,7 +374,7 @@
                 }
                 window.lastBalance = balance;
                 if (shouldLogSummary) {
-                    log(`Баланс (без сделок): ${currentBalance.toFixed(2)}`);
+                    log(`Balance (no trades): ${currentBalance.toFixed(2)}`);
                 }
                 return balance;
             }
@@ -389,7 +389,7 @@
             for (const signal of signals) {
                 const entryIndex = data.findIndex(candle => candle.time === signal.time);
                 if (entryIndex === -1) {
-                    log(`Сигнал с временем ${signal.time} не найден в данных`);
+                    log(`Signal with time ${signal.time} not found in data`);
                     continue;
                 }
 
@@ -445,20 +445,20 @@
                     if (isWin) {
                         martingaleStep = 0;
                     } else {
-                        // stopLossCnt делает паузу (freeze) в мартине при лоссе
+                        // stopLossCnt makes a pause (freeze) in martingale on loss
                         const stopLossCnt = Math.max(0, Number(this.params.stopLossCnt ?? 4));
                         const stopLossPeriod = Math.max(1, Number(this.params.stopLossPeriod ?? 60));
                         
                         const stopActive = stopLossCnt > 0 && this.tradeHistory.length > 0;
                         if (stopActive) {
-                            // Считаем лоссы за последний период в барах (свечах)
+                            // Count losses over the last period in bars (candles)
                             const windowStart = Math.max(0, closeIndex - stopLossPeriod);
                             const recentLosses = this.tradeHistory.filter(t => {
                                 const closeIdx = data.findIndex(candle => candle.time === t.closeTime);
                                 return t.result === 'loss' && closeIdx >= windowStart && closeIdx <= closeIndex;
                             }).length;
                             
-                            // Если лоссов меньше stopLossCnt, увеличиваем шаг; иначе мартин замерзает
+                            // If losses are less than stopLossCnt, increase the step; otherwise martingale is frozen
                             if (recentLosses < stopLossCnt) {
                                 martingaleStep = Math.min(martingaleMaxSteps, martingaleStep + 1);
                             }
@@ -487,14 +487,14 @@
             const losses = this.tradeHistory.filter(t => t.result === 'loss').length;
             const winrate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
             if (shouldLogSummary) {
-                log(`Конечный баланс: ${currentBalance.toFixed(2)} (сделок: ${totalTrades}, win: ${wins}, loss: ${losses}, winrate: ${winrate.toFixed(2)}%)`);
+                log(`Final balance: ${currentBalance.toFixed(2)} (trades: ${totalTrades}, win: ${wins}, loss: ${losses}, winrate: ${winrate.toFixed(2)}%)`);
             }
             return balance;
         },
 
         testStrategy: function() {
             if (!window.data || window.data.length === 0) {
-                log('Нет данных для тестирования стратегии');
+                log('No data to test strategy');
                 return;
             }
 
@@ -513,11 +513,11 @@
                 if (typeof window.applyAllSettings === 'function') {
                     window.applyAllSettings();
                 } else {
-                    log('Предупреждение: функция applyAllSettings не найдена');
+                    log('Warning: applyAllSettings function not found');
                 }
 
-                // Каждый запуск бэктеста должен начинаться с чистой истории сделок,
-                // иначе dealStats() в rules будет учитывать предыдущий прогон.
+                // Each backtest run should start with a clean trade history,
+                // otherwise dealStats() in rules will account for previous runs.
                 this.tradeHistory = [];
                 window.tradeHistory = this.tradeHistory;
 
