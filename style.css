@@ -100,9 +100,35 @@
             flex-shrink: 0;
             margin: 0;
             align-items: center;
+            flex-wrap: wrap;
+        }
+        .strategy-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 220px;
+            flex: 1 1 220px;
+            font-size: 11px;
+            font-weight: bold;
+            color: #d1d4dc;
+        }
+        .strategy-select {
+            flex: 1 1 auto;
+            min-width: 0;
+            border: 1px solid #363c4e;
+            border-radius: 4px;
+            background: #0a0c14;
+            color: #d1d4dc;
+            font-family: 'Segoe UI', sans-serif;
+            font-size: 11px;
+            padding: 6px 10px;
+            outline: none;
+        }
+        .strategy-select:focus {
+            border-color: #2196f3;
         }
         .strategy-btn {
-            flex: 1;
+            flex: 0 0 auto;
             margin-top: 0;
         }
         .menu-divider {
@@ -113,14 +139,32 @@
         .topbar-spacer {
             flex-grow: 1;
         }
-        /* Marker navigation buttons */
-        .marker-nav {
-            display: flex;
-            gap: 5px;
+        /* Mini balance overview in topbar */
+        #mini-balance-wrap {
+            position: relative;
+            width: 200px;
+            height: 30px;
+            margin-left: 12px;
+            background: #131722;
+            border: 1px solid #363c4e;
+            border-radius: 3px;
+            cursor: pointer;
+            overflow: hidden;
+            flex-shrink: 0;
         }
-        .marker-nav .nav-btn {
-            flex: 1;
-            text-align: center;
+        #mini-balance-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #mini-balance-viewport {
+            position: absolute;
+            top: 0;
+            height: 100%;
+            background: rgba(33, 150, 243, 0.15);
+            border-left: 1px solid rgba(33, 150, 243, 0.5);
+            border-right: 1px solid rgba(33, 150, 243, 0.5);
+            pointer-events: none;
         }
         .code-editor {
             background: #0a0c14;

@@ -4,9 +4,13 @@
 window.StrategyCore = (function() {
     'use strict';
 
+    // StrategyParams загружается динамически через strategy-editor.js,
+    // поэтому его отсутствие на раннем этапе — штатная ситуация.
+    const DEFERRED_MODULES = new Set(['StrategyParams']);
+
     function getModule(name) {
         const moduleRef = window[name];
-        if (!moduleRef && typeof window.addLog === 'function') {
+        if (!moduleRef && !DEFERRED_MODULES.has(name) && typeof window.addLog === 'function') {
             window.addLog(`Ошибка: не загружен модуль ${name}`);
         }
         return moduleRef;

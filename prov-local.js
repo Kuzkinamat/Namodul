@@ -127,8 +127,8 @@ window.LocalJsProvider = {
             }
             addLog(`Index manifest unavailable (HTTP ${response.status}), trying directory listing.`);
         } catch (e) {
-            // index.json не найден или ошибка сети
-            console.warn('Не удалось загрузить data/index.json:', e.message);
+            // index.json not found or network error
+            console.warn('Cannot load data/index.json:', e.message);
             addLog(`Index manifest failed: ${e.message}`);
         }
 
@@ -137,19 +137,18 @@ window.LocalJsProvider = {
             const response = await fetch('data/', { cache: 'no-store' });
             if (response.ok) {
                 const html = await response.text();
-                console.log('HTML листинга data/ (первые 2000 символов):', html.substring(0, 2000));
-                // Парсим HTML листинга (простой regex для ссылок на файлы)
+                console.log('HTML listing of data/ (first 2000 characters):', html.substring(0, 2000));
+                // Parse HTML listing (simple regex for file links)
                 const matches = [...html.matchAll(/href\s*=\s*["']([^"']*_data\.js(?:\?[^"']*)?)["']/gi)];
                 if (matches) {
                     const files = matches.map(m => m[1]);
-                    console.log('Все ссылки на _data.js:', files);
-                    // Фильтруем только файлы _data.js
+                    console.log('Data files:', files);
                     const dataFiles = [...new Set(files
                         .map(f => f.split('?')[0])
                         .map(f => f.split('/').pop())
                         .filter(f => f && f.endsWith('_data.js'))
                     )];
-                    console.log('Отфильтрованные файлы данных:', dataFiles);
+                    console.log('Filtered data files:', dataFiles);
                     const modules = dataFiles.map(filename => {
                         const basename = filename.replace('_data.js', '');
                         return {
@@ -158,27 +157,27 @@ window.LocalJsProvider = {
                             timeframe: this._extractTimeframe(basename)
                         };
                     });
-                    console.log('Сформированные модули:', modules);
+                    console.log('Formed modules:', modules);
                     if (modules.length > 0) {
                         addLog(`Directory listing loaded: ${modules.length} data files.`);
                         return modules;
                     }
                     addLog('Directory listing parsed but no data files found.');
                 } else {
-                    console.warn('Не найдено ссылок на _data.js в HTML листинга');
+                    console.warn('No links to _data.js found in HTML listing');
                     addLog('Directory listing has no links to *_data.js files.');
                 }
             } else {
-                console.warn('Ответ от data/ не OK:', response.status, response.statusText);
+                console.warn('Response from data/ not OK:', response.status, response.statusText);
                 addLog(`Directory listing unavailable (HTTP ${response.status}).`);
             }
         } catch (e) {
-            console.warn('Не удалось получить листинг папки data:', e.message);
+            console.warn('Cannot get directory listing for data folder:', e.message);
             addLog(`Directory listing failed: ${e.message}`);
         }
 
-        // Если ничего не получилось, возвращаем пустой массив.
-        console.warn('Динамическое сканирование не удалось. Файлы локальных данных не найдены.');
+        // If nothing worked, return an empty array.
+        console.warn('Dynamic scanning failed. Local data files not found.');
         return [];
     },
 
@@ -221,7 +220,7 @@ window.LocalJsProvider = {
     async getPairsByTimeframe(timeframe) {
         await this._ensureKnownModules();
         const filtered = this._knownModules.filter(d => d.timeframe === timeframe);
-        addLog(`Фильтрация по TF ${timeframe}: найдено ${filtered.length} наборов данных`);
+        addLog(`Filtering by TF ${timeframe}: found ${filtered.length} data sets`);
         return filtered.map(d => d.pair);
     },
 
@@ -231,7 +230,7 @@ window.LocalJsProvider = {
     async requestAccess() {
         addLog("Local data provider initialized (ES modules).");
         await this._ensureKnownModules();
-        addLog(`Доступно файлов данных: ${this._knownModules.length}`);
+        addLog(`Data files: ${this._knownModules.length}`);
         return true;
     },
 

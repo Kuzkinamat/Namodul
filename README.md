@@ -26,10 +26,10 @@ Apply code from the editor window using the Run button.
 4. When selecting a source, the pair list updates and is filtered according to the selected timeframe.
 5. Select a currency pair.
 6. Selecting a pair loads data from the chosen source respecting the selected range.
-7. Enable indicators and strategies via the menu.
-8. Run the strategy backtest.
+7. Open the strategy panel and choose a strategy from the list.
+8. Selecting a pair or another strategy automatically runs the backtest for the active strategy.
 9. Modify indicator parameters in the strategy editor and click Apply to redraw indicators.
-10. Modify the strategy code and click Run.
+10. Modify the strategy code and click Apply.
 
 ## Automatic loading
 ## Local data (ES modules)

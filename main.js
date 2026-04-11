@@ -91,95 +91,118 @@ window.onresize = () => {
     });
 };
 
-let hasAutoStartedStrategyOnFirstOpen = false;
+let hasAutoEnabledBalanceOnFirstOpen = false;
 
-async function autoStartStrategyAndBalanceOnFirstOpen() {
-    if (hasAutoStartedStrategyOnFirstOpen) {
+function getBalancePaneData() {
+    if (!data.length) {
+        addLog('No data available for balance calculation');
+        return null;
+    }
+
+    const winPayout = window.Strategy?.params?.winPayout ?? 0.8;
+    const balanceData = window.Strategy.calculatePnL(data, window.lastSignals || [], 100, 1, winPayout, { logSummary: false });
+    if (!balanceData || balanceData.length === 0) {
+        addLog('Failed to calculate balance');
+        return null;
+    }
+
+    return balanceData;
+}
+
+function ensureBalancePane() {
+    if (activePanes.Balance) {
+        return activePanes.Balance;
+    }
+
+    const wr = document.createElement('div');
+    wr.id = 'wrapper-Balance';
+    wr.className = 'pane-wrapper sub-pane';
+    wr.style.height = '65px';
+    wr.innerHTML = `<div class="v-line"></div><div id="chart-Balance" class="chart-container"></div>`;
+    document.getElementById('panels-container').appendChild(wr);
+
+    const chart = LightweightCharts.createChart(document.getElementById('chart-Balance'), {
+        layout: { background: { color: '#131722' }, textColor: '#d1d4dc' },
+        rightPriceScale: { borderColor: '#363c4e', minimumWidth: 80, autoScale: true },
+        grid: { vertLines: { visible: false }, horzLines: { color: '#242733' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Hidden },
+        timeScale: { visible: false }
+    });
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => syncAll(chart));
+    activePanes.Balance = { chart, series: [] };
+    return activePanes.Balance;
+}
+
+function renderBalancePane(balancePaneData) {
+    const pane = ensureBalancePane();
+
+    pane.series.forEach(series => pane.chart.removeSeries(series));
+    pane.series = [];
+
+    const balanceSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: '#00ff00',
+        lineWidth: 2,
+        lastValueVisible: false,
+        priceLineVisible: false
+    });
+    balanceSeries.setData(balancePaneData);
+    pane.series.push(balanceSeries);
+
+    pane.chart.timeScale().fitContent();
+    window.onresize();
+    syncAll(chartMain);
+}
+
+async function autoRunSelectedStrategy(options = {}) {
+    if (!Array.isArray(window.data) || window.data.length === 0) {
+        if (options.logNoData !== false) {
+            addLog('No autorun: no data available');
+        }
         return;
     }
-    if (!Array.isArray(window.data) || window.data.length === 0) {
-        addLog('Автозапуск стратегии пропущен: нет данных');
-        return;
+
+    if (window.StrategyEditor && typeof window.StrategyEditor.ensureInitialStrategyReady === 'function') {
+        await window.StrategyEditor.ensureInitialStrategyReady();
     }
 
     const maxAttempts = 10;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         if (window.Strategy && typeof window.Strategy.testStrategy === 'function') {
-            hasAutoStartedStrategyOnFirstOpen = true;
+            if (window.StrategyEditor && typeof window.StrategyEditor.syncIndicatorSelectionFromStrategyParams === 'function') {
+                window.StrategyEditor.syncIndicatorSelectionFromStrategyParams();
+            }
 
-            const ensureIndicatorEnabled = (id) => {
-                const cb = document.querySelector(`#indicator-menu input[data-id="${id}"]`);
-                if (!cb) return;
-                if (!cb.checked) {
-                    cb.checked = true;
-                }
-                if (typeof window.toggleIndicator === 'function') {
-                    window.toggleIndicator(id, true);
-                }
-            };
+            if (window.StrategyEditor && typeof window.StrategyEditor.hasActiveStrategy === 'function' && !window.StrategyEditor.hasActiveStrategy()) {
+                addLog('No autorun: no active strategy selected');
+                return;
+            }
 
-            const ensureIndicatorDisabled = (id) => {
-                const cb = document.querySelector(`#indicator-menu input[data-id="${id}"]`);
-                if (!cb) return;
-                if (cb.checked) {
-                    cb.checked = false;
-                }
-                if (typeof window.toggleIndicator === 'function') {
-                    window.toggleIndicator(id, false);
-                }
-            };
-
-            // Read params (prefer Strategy.params if strategy already initialized,
-            // otherwise use StrategyParams defaults) and enable indicators accordingly.
-            const strategyParams = (window.Strategy && window.Strategy.params)
-                || (window.StrategyParams && typeof window.StrategyParams.getDefaultParams === 'function'
-                    ? window.StrategyParams.getDefaultParams()
-                    : {});
-
-            const idMap = {
-                useSMA: 'SMA',
-                useBB: 'BB',
-                useATR: 'ATR',
-                useMACD: 'MACD',
-                useStochastic: 'Stochastic'
-            };
-
-            Object.entries(idMap).forEach(([flag, id]) => {
-                const want = Boolean(strategyParams[flag]);
-                if (want) {
-                    ensureIndicatorEnabled(id);
-                } else {
-                    ensureIndicatorDisabled(id);
-                }
-            });
-
-            // Start strategy after indicators are set
             window.Strategy.testStrategy();
 
-            const balanceCheckbox = document.querySelector('#indicator-menu input[data-id="Balance"]');
-            if (balanceCheckbox && !balanceCheckbox.checked) {
-                balanceCheckbox.checked = true;
+            if (options.enableBalance === true && !hasAutoEnabledBalanceOnFirstOpen) {
+                hasAutoEnabledBalanceOnFirstOpen = true;
+                addLog('Start ...');
+            } else if (options.logSuccess === true) {
+                addLog('Restart ...');
             }
-            if (typeof window.toggleBalance === 'function') {
-                window.toggleBalance(true);
-            }
+
             return;
         }
 
         await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    addLog('Автозапуск стратегии не выполнен: Strategy еще не готов');
+    addLog('Not ready');
 }
 
-function scheduleAutoStartStrategyAndBalanceOnFirstOpen() {
+function scheduleAutoRunSelectedStrategy(options = {}) {
     const run = () => {
-        autoStartStrategyAndBalanceOnFirstOpen().catch(err => {
+        autoRunSelectedStrategy(options).catch(err => {
             addLog(`Ошибка автозапуска стратегии: ${err.message}`);
         });
     };
 
-    // Отложить тяжелый расчёт до первого кадра, чтобы интерфейс открылся быстрее.
     if (typeof window.requestAnimationFrame === 'function') {
         window.requestAnimationFrame(() => setTimeout(run, 0));
         return;
@@ -314,10 +337,7 @@ window.setPair = async (p) => {
         }
         // Сбросить сигналы
         window.lastSignals = [];
-        // Очистить массив временных меток маркеров
         window.MARKER_TIMESTAMPS.length = 0;
-        curM = 0;
-        window.curM = curM;
         // Обновить график баланса, если он активен
         if (activePanes.Balance && typeof window.updateBalance === 'function') {
             window.updateBalance();
@@ -329,6 +349,11 @@ window.setPair = async (p) => {
 
         // Re-apply full-range viewport after indicator refresh/sync side effects.
         chartMain.timeScale().fitContent();
+
+        scheduleAutoRunSelectedStrategy({
+            enableBalance: !hasAutoEnabledBalanceOnFirstOpen,
+            logNoData: false
+        });
 
         addLog(`Loaded ${p}: ${data.length} candles (Range: ${currentRange}, TF: ${currentTimeframe})`);
     }
@@ -493,94 +518,162 @@ window.toggleIndicator = function(id, isChecked) {
 };
 
 
-// Включение/выключение графика баланса
-window.toggleBalance = function(isChecked) {
-    if (!isChecked) {
-        // Удалить панель Balance
-        if (activePanes.Balance) {
-            activePanes.Balance.chart.remove();
-            document.getElementById('wrapper-Balance')?.remove();
-            delete activePanes.Balance;
-            window.onresize();
-        }
-        return;
-    }
-    if (!data.length) {
-        addLog('Нет данных для расчета баланса');
-        return;
-    }
-    // Рассчитать PnL (если сигналов нет, будет отображен постоянный баланс)
-    const winPayout = window.Strategy?.params?.winPayout ?? 0.8;
-    const balanceData = window.Strategy.calculatePnL(data, window.lastSignals || [], 100, 1, winPayout, { logSummary: false });
-    if (!balanceData || balanceData.length === 0) {
-        addLog('Не удалось рассчитать баланс');
-        return;
-    }
-    // Создать панель для Balance, если её нет
-    if (!activePanes.Balance) {
-        const wr = document.createElement('div');
-        wr.id = 'wrapper-Balance';
-        wr.className = 'pane-wrapper sub-pane';
-        wr.style.height = '65px';
-        wr.innerHTML = `<div class="v-line"></div><div id="chart-Balance" class="chart-container"></div>`;
-        document.getElementById('panels-container').appendChild(wr);
-        const chart = LightweightCharts.createChart(document.getElementById('chart-Balance'), {
-            layout: { background: { color: '#131722' }, textColor: '#d1d4dc' },
-            rightPriceScale: { borderColor: '#363c4e', minimumWidth: 80 },
-            grid: { vertLines: { visible: false }, horzLines: { color: '#242733' } },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Hidden },
-            timeScale: { visible: false }
-        });
-        chart.timeScale().subscribeVisibleLogicalRangeChange(() => syncAll(chart));
-        activePanes.Balance = { chart, series: [] };
-    }
-    const pane = activePanes.Balance;
-    pane.series.forEach(s => pane.chart.removeSeries(s));
-    pane.series = [];
-    const series = pane.chart.addSeries(LightweightCharts.LineSeries, {
-        color: '#00ff00',
-        lineWidth: 2,
-        lastValueVisible: false,
-        priceLineVisible: false
-    });
-    series.setData(balanceData);
-    pane.series.push(series);
-    pane.chart.timeScale().fitContent();
-    window.onresize();
-    syncAll(chartMain);
-};
-
 // Обновить график баланса (если активен) на основе текущих сигналов
 window.updateBalance = function() {
     if (!activePanes.Balance) {
         // График баланса не активен
         return;
     }
-    if (!data.length) {
-        addLog('Нет данных для обновления баланса');
+
+    const balancePaneData = getBalancePaneData();
+    if (!balancePaneData) {
         return;
     }
-    // Рассчитать PnL (если сигналов нет, будет отображен постоянный баланс)
-    const winPayout = window.Strategy?.params?.winPayout ?? 0.8;
-    const balanceData = window.Strategy.calculatePnL(data, window.lastSignals || [], 100, 1, winPayout, { logSummary: false });
-    if (!balanceData || balanceData.length === 0) {
-        addLog('Не удалось рассчитать баланс');
-        return;
-    }
-    const pane = activePanes.Balance;
-    pane.series.forEach(s => pane.chart.removeSeries(s));
-    pane.series = [];
-    const series = pane.chart.addSeries(LightweightCharts.LineSeries, {
-        color: '#00ff00',
-        lineWidth: 2,
-        lastValueVisible: false,
-        priceLineVisible: false
-    });
-    series.setData(balanceData);
-    pane.series.push(series);
-    pane.chart.timeScale().fitContent();
-    syncAll(chartMain);
+
+    renderBalancePane(balancePaneData);
 };
+
+// ── Mini balance overview in topbar ─────────────────────────────────
+(function initMiniBalance() {
+    let miniBalanceData = null; // cached [{time, value}, ...]
+
+    function drawMiniBalance() {
+        const canvas = document.getElementById('mini-balance-canvas');
+        if (!canvas) return;
+        const wrap = canvas.parentElement;
+        const dpr = window.devicePixelRatio || 1;
+        const w = wrap.clientWidth;
+        const h = wrap.clientHeight;
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, w, h);
+
+        if (!miniBalanceData || miniBalanceData.length < 2) return;
+
+        const vals = miniBalanceData.map(d => d.value);
+        const minV = Math.min(...vals);
+        const maxV = Math.max(...vals);
+        const range = maxV - minV || 1;
+        const pad = 2;
+
+        ctx.beginPath();
+        for (let i = 0; i < miniBalanceData.length; i++) {
+            const x = (i / (miniBalanceData.length - 1)) * w;
+            const y = pad + (1 - (miniBalanceData[i].value - minV) / range) * (h - pad * 2);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        const lastVal = vals[vals.length - 1];
+        const firstVal = vals[0];
+        ctx.strokeStyle = lastVal >= firstVal ? '#26a69a' : '#ef5350';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        // fill under line
+        const lastX = w;
+        const baseY = h;
+        ctx.lineTo(lastX, baseY);
+        ctx.lineTo(0, baseY);
+        ctx.closePath();
+        ctx.fillStyle = lastVal >= firstVal ? 'rgba(38,166,154,0.10)' : 'rgba(239,83,80,0.10)';
+        ctx.fill();
+    }
+
+    function updateMiniViewport() {
+        const vp = document.getElementById('mini-balance-viewport');
+        const wrap = document.getElementById('mini-balance-wrap');
+        if (!vp || !wrap || !data.length) { if (vp) vp.style.display = 'none'; return; }
+        const ts = window.chartMain && window.chartMain.timeScale();
+        if (!ts) return;
+        const range = ts.getVisibleLogicalRange();
+        if (!range) return;
+        const total = data.length;
+        const w = wrap.clientWidth;
+        const left = Math.max(0, range.from / total) * w;
+        const right = Math.min(1, range.to / total) * w;
+        vp.style.display = 'block';
+        vp.style.left = left + 'px';
+        vp.style.width = Math.max(2, right - left) + 'px';
+    }
+
+    // Hook into syncAll to update viewport — done via chartMain timeScale listener
+    chartMain.timeScale().subscribeVisibleLogicalRangeChange(() => updateMiniViewport());
+
+    // Update mini balance data whenever balance is computed
+    const origGetBalancePaneData = getBalancePaneData;
+    getBalancePaneData = function() {
+        const result = origGetBalancePaneData();
+        if (result && result.length) {
+            miniBalanceData = result;
+            drawMiniBalance();
+            requestAnimationFrame(updateMiniViewport);
+        }
+        return result;
+    };
+
+    // Also refresh mini balance on data reload (even without balance pane open)
+    const origUpdateBalance = window.updateBalance;
+    window.updateBalance = function() {
+        origUpdateBalance();
+        // Always update mini balance independently of the full balance pane
+        try {
+            const bd = origGetBalancePaneData();
+            if (bd && bd.length) {
+                miniBalanceData = bd;
+                drawMiniBalance();
+                requestAnimationFrame(updateMiniViewport);
+            }
+        } catch(e) {}
+    };
+
+    // Click on mini balance -> scroll charts to that position
+    document.addEventListener('DOMContentLoaded', function() {
+        const wrap = document.getElementById('mini-balance-wrap');
+        if (!wrap) return;
+
+        let isDragging = false;
+
+        function handleNavigation(e) {
+            if (!data.length || !window.chartMain) return;
+            const rect = wrap.getBoundingClientRect();
+            const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+            const ratio = x / rect.width;
+            const ts = window.chartMain.timeScale();
+            const visibleRange = ts.getVisibleLogicalRange();
+            if (!visibleRange) return;
+            const span = visibleRange.to - visibleRange.from;
+            const center = ratio * data.length;
+            const newFrom = Math.max(0, Math.min(center - span / 2, data.length - 1 - span));
+            ts.setVisibleLogicalRange({ from: newFrom, to: newFrom + span });
+        }
+
+        wrap.addEventListener('mousedown', function(e) {
+            isDragging = true;
+            handleNavigation(e);
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', function(e) {
+            if (isDragging) handleNavigation(e);
+        });
+        document.addEventListener('mouseup', function() {
+            isDragging = false;
+        });
+    });
+
+    // Expose for external triggers
+    window.updateMiniBalance = function() {
+        try {
+            const bd = origGetBalancePaneData();
+            if (bd && bd.length) {
+                miniBalanceData = bd;
+                drawMiniBalance();
+                requestAnimationFrame(updateMiniViewport);
+            }
+        } catch(e) {}
+    };
+})();
 
 // Initialize with default values
 window.onresize();
@@ -626,8 +719,6 @@ window.onresize();
         
         // Set pair
         await window.setPair(pair);
-
-        scheduleAutoStartStrategyAndBalanceOnFirstOpen();
         
         addLog(`Auto-loaded ${pair} (5m) from local data, range 3M.`);
     } else {
@@ -646,144 +737,6 @@ window.toggleSettings = function() {
     }
 
     panel.classList.toggle('open');
-};
-
-// Навигация по маркерам
-function getVisibleLogicalRangeSafe() {
-    return chartMain.timeScale().getVisibleLogicalRange();
-}
-
-function findNearestMarkerIndexByCenter() {
-    if (!window.MARKER_TIMESTAMPS || window.MARKER_TIMESTAMPS.length === 0) {
-        return -1;
-    }
-
-    const visibleRange = getVisibleLogicalRangeSafe();
-    if (!visibleRange || !data || data.length === 0) {
-        return Math.max(0, Math.min(curM, window.MARKER_TIMESTAMPS.length - 1));
-    }
-
-    const centerLogical = (visibleRange.from + visibleRange.to) / 2;
-    const centerIndex = Math.max(0, Math.min(data.length - 1, Math.round(centerLogical)));
-    const centerTime = data[centerIndex].time;
-
-    let nearestIndex = 0;
-    let nearestDistance = Infinity;
-    for (let i = 0; i < window.MARKER_TIMESTAMPS.length; i++) {
-        const distance = Math.abs(window.MARKER_TIMESTAMPS[i] - centerTime);
-        if (distance < nearestDistance) {
-            nearestDistance = distance;
-            nearestIndex = i;
-        }
-    }
-
-    return nearestIndex;
-}
-
-function centerOnDataIndexPreserveScale(targetIndex) {
-    const ts = chartMain.timeScale();
-    const visibleRange = getVisibleLogicalRangeSafe();
-    if (!visibleRange) {
-        return false;
-    }
-
-    const span = visibleRange.to - visibleRange.from;
-    const halfSpan = span / 2;
-    let from = targetIndex - halfSpan;
-    let to = targetIndex + halfSpan;
-
-    if (from < 0) {
-        to -= from;
-        from = 0;
-    }
-
-    const maxIndex = Math.max(0, data.length - 1);
-    if (to > maxIndex) {
-        const shift = to - maxIndex;
-        from = Math.max(0, from - shift);
-        to = maxIndex;
-    }
-
-    ts.setVisibleLogicalRange({ from, to });
-    return true;
-}
-
-window.changeMarker = function(dir) {
-    if (!window.MARKER_TIMESTAMPS || window.MARKER_TIMESTAMPS.length === 0) {
-        addLog('Нет маркеров для навигации');
-        return;
-    }
-
-    const markersCount = window.MARKER_TIMESTAMPS.length;
-    const baseIndex = findNearestMarkerIndexByCenter();
-
-    if (dir === 'first') {
-        curM = 0;
-    } else if (dir === 'last') {
-        curM = markersCount - 1;
-    } else if (typeof dir === 'number') {
-        curM = (baseIndex + dir + markersCount) % markersCount;
-    } else {
-        addLog('Неизвестное направление навигации');
-        return;
-    }
-
-    window.curM = curM;
-    const markerTime = window.MARKER_TIMESTAMPS[curM];
-    const markerDataIndex = data.findIndex(candle => candle.time === markerTime);
-
-    if (markerDataIndex === -1) {
-        addLog('Маркер не найден в текущих данных');
-        return;
-    }
-
-    if (!centerOnDataIndexPreserveScale(markerDataIndex)) {
-        addLog('Не удалось выполнить переход без изменения масштаба');
-        return;
-    }
-
-};
-
-// Переход к началу графика (сохраняет текущий масштаб)
-window.navigateToStart = function() {
-    if (!data || data.length === 0) {
-        addLog('Нет данных для навигации');
-        return;
-    }
-    const ts = chartMain.timeScale();
-    const visibleRange = ts.getVisibleLogicalRange();
-    if (!visibleRange) {
-        addLog('Переход к началу невозможен: видимый диапазон не определён');
-        return;
-    }
-    // Вычислить длину видимого диапазона в логических единицах (индексах свечей)
-    const length = visibleRange.to - visibleRange.from;
-    // Установить новый диапазон с той же длиной, но начинающийся с первой свечи
-    const newFrom = 0;
-    const newTo = Math.min(length, data.length - 1);
-    ts.setVisibleLogicalRange({ from: newFrom, to: newTo });
-    addLog('Переход к началу графика');
-};
-
-// Переход к концу графика (сохраняет текущий масштаб)
-window.navigateToEnd = function() {
-    if (!data || data.length === 0) {
-        addLog('Нет данных для навигации');
-        return;
-    }
-    const ts = chartMain.timeScale();
-    const visibleRange = ts.getVisibleLogicalRange();
-    if (!visibleRange) {
-        addLog('Переход к концу невозможен: видимый диапазон не определён');
-        return;
-    }
-    // Вычислить длину видимого диапазона в логических единицах
-    const length = visibleRange.to - visibleRange.from;
-    // Установить новый диапазон с той же длиной, но заканчивающийся последней свечой
-    const newTo = data.length - 1;
-    const newFrom = Math.max(0, newTo - length);
-    ts.setVisibleLogicalRange({ from: newFrom, to: newTo });
-    addLog('Переход к концу графика');
 };
 
 // applyAllSettings is provided by strategy-editor.js.

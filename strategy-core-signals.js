@@ -77,14 +77,44 @@ window.StrategyCoreSignals = (function() {
         const expirationSeconds = (resolvedParams.expirationMinutes || 5) * 60;
         const timeIndexMap = createTimeIndexMap(data);
 
+        // Инкрементальная история сделок: вместо пересчёта с нуля на каждой свече
+        // обновляем только новые закрытые сделки
+        const closedTradeHistory = [];
+        let nextUncheckedSignal = 0;
+
         for (let i = 1; i < data.length; i++) {
             if (resolvedParams.filterTradingHours && data[i].isTradingHour === false) {
                 continue;
             }
 
+            // Инкрементально проверить, закрылись ли ранее открытые сигналы
+            const currentTime = data[i].time;
+            while (nextUncheckedSignal < signals.length) {
+                const signal = signals[nextUncheckedSignal];
+                const entryIndex = timeIndexMap.get(signal.time);
+                if (entryIndex === undefined) {
+                    nextUncheckedSignal++;
+                    continue;
+                }
+                const closeTime = signal.time + expirationSeconds;
+                const closeIndex = findCloseIndex(data, entryIndex, closeTime);
+                const closeCandle = data[closeIndex];
+                if (!closeCandle || closeCandle.time >= currentTime) {
+                    break; // эта и все последующие сделки ещё не закрыты
+                }
+                const isWin = signal.type === 'buy'
+                    ? closeCandle.close > signal.price
+                    : closeCandle.close < signal.price;
+                closedTradeHistory.push({
+                    time: signal.time,
+                    type: signal.type,
+                    closeTime: closeCandle.time,
+                    result: isWin ? 'win' : 'loss'
+                });
+                nextUncheckedSignal++;
+            }
 
-            const localTradeHistory = buildClosedTradeHistory(data, signals, i, expirationSeconds, timeIndexMap);
-            const mergedTradeHistory = (tradeHistory || []).concat(localTradeHistory);
+            const mergedTradeHistory = (tradeHistory || []).concat(closedTradeHistory);
             const context = contextModule.createConditionContext(i, data, resolvedIndicators, mergedTradeHistory);
             const { buy, sell } = contextModule.evaluateRules(resolvedParams.rules, context);
 

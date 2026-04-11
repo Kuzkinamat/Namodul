@@ -70,6 +70,40 @@ window.StrategyCoreContext = (function() {
             return arr[idx] ? arr[idx].value : null;
         }
 
+        function readBalanceSpeed(lag, period) {
+            const arr = window.lastBalance;
+            if (!arr) return null;
+
+            const normalizedPeriod = Math.max(1, Number(period) || 1);
+            const idx = i + lag;
+            const prevIdx = idx - normalizedPeriod;
+            if (idx < 0 || idx >= arr.length || prevIdx < 0 || prevIdx >= arr.length) {
+                return null;
+            }
+
+            const currentValue = Number(arr[idx] && arr[idx].value);
+            const previousValue = Number(arr[prevIdx] && arr[prevIdx].value);
+            if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue) || previousValue === 0) {
+                return null;
+            }
+
+            return ((currentValue - previousValue) / previousValue) * 100;
+        }
+
+        function balSpeed(lag, period) {
+            return readBalanceSpeed(Number(lag) || 0, period);
+        }
+
+        function balFast(lag) {
+            const period = Math.max(1, Number(window.Strategy?.params?.balFast ?? 40));
+            return readBalanceSpeed(Number(lag) || 0, period);
+        }
+
+        function balSlow(lag) {
+            const period = Math.max(1, Number(window.Strategy?.params?.balSlow ?? 160));
+            return readBalanceSpeed(Number(lag) || 0, period);
+        }
+
         function lastLossWithinTf(tfCount = 2) {
             const history = tradeHistory || [];
             if (!history.length) return false;
@@ -131,6 +165,9 @@ window.StrategyCoreContext = (function() {
             c,
             ind,
             bal,
+            balSpeed,
+            balFast,
+            balSlow,
             lastLossWithinTf,
             lossCountWithinPeriods,
 

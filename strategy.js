@@ -7,6 +7,8 @@
     const FALLBACK_PARAMS = {
         expirationMinutes: 15,
         winPayout: 0.8,
+        balFast: 40,
+        balSlow: 160,
         baseStake: 1,
         useMartingale: false,
         martingaleMultiplier: 2,
@@ -27,6 +29,8 @@
     ];
 
     const INDICATOR_SETTING_KEYS = [
+        'balFast',
+        'balSlow',
         'bbPeriod',
         'bbStdDev',
         'useATR',
@@ -386,9 +390,15 @@
             const martingaleMaxSteps = Math.max(0, Number(this.params.martingaleMaxSteps ?? 5));
             let martingaleStep = 0;
 
+            // Построить карту time→index для O(1) поиска вместо findIndex O(n)
+            const timeIndexMap = new Map();
+            for (let idx = 0; idx < data.length; idx++) {
+                timeIndexMap.set(data[idx].time, idx);
+            }
+
             for (const signal of signals) {
-                const entryIndex = data.findIndex(candle => candle.time === signal.time);
-                if (entryIndex === -1) {
+                const entryIndex = timeIndexMap.get(signal.time);
+                if (entryIndex === undefined) {
                     log(`Signal with time ${signal.time} not found in data`);
                     continue;
                 }
@@ -453,19 +463,32 @@
                         if (stopActive) {
                             // Count losses over the last period in bars (candles)
                             const windowStart = Math.max(0, closeIndex - stopLossPeriod);
-                            const recentLosses = this.tradeHistory.filter(t => {
-                                const closeIdx = data.findIndex(candle => candle.time === t.closeTime);
-                                return t.result === 'loss' && closeIdx >= windowStart && closeIdx <= closeIndex;
-                            }).length;
+                            let recentLosses = 0;
+                            for (let ti = this.tradeHistory.length - 1; ti >= 0; ti--) {
+                                const t = this.tradeHistory[ti];
+                                if (t.result !== 'loss') continue;
+                                const closeIdx = timeIndexMap.get(t.closeTime);
+                                if (closeIdx === undefined) continue;
+                                if (closeIdx < windowStart) break;
+                                if (closeIdx <= closeIndex) recentLosses++;
+                            }
                             
                             // If losses are less than stopLossCnt, increase the step; otherwise martingale is frozen
                             if (recentLosses < stopLossCnt) {
-                                martingaleStep = Math.min(martingaleMaxSteps, martingaleStep + 1);
+                                if (martingaleStep >= martingaleMaxSteps) {
+                                    martingaleStep = 0;
+                                } else {
+                                    martingaleStep++;
+                                }
                             }
                             // Иначе шаг остаётся без изменений (freeze)
                         } else {
                             // stopLossCnt не активен, увеличиваем шаг как обычно
-                            martingaleStep = Math.min(martingaleMaxSteps, martingaleStep + 1);
+                            if (martingaleStep >= martingaleMaxSteps) {
+                                martingaleStep = 0;
+                            } else {
+                                martingaleStep++;
+                            }
                         }
                     }
                 }
@@ -578,8 +601,8 @@
 
         updateFromCore: function() {
             // Синхронизировать params с последними значениями из StrategyCore/StrategyParams
-            // Это необходимо, чтобы новые значения индикаторов (bbPeriod, bbStdDev) 
-            // из переопределенного strategy-params.js были доступны для renderBB и других функций
+            // Это необходимо, чтобы новые значения индикаторов (bbPeriod, bbStdDev)
+            // из текущего strategy-файла были доступны для renderBB и других функций
             const coreParams = createDefaultParams();
             if (coreParams && typeof coreParams === 'object') {
                 this.params = { ...coreParams };
