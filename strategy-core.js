@@ -34,8 +34,8 @@ window.StrategyCore = (function() {
         calculateIndicators: function(data, params, options) {
             return call('StrategyCoreIndicators', 'calculateIndicators', null, [data, params, options]);
         },
-        createConditionContext: function(index, candles, indicators, history) {
-            return call('StrategyCoreContext', 'createConditionContext', null, [index, candles, indicators, history]);
+        createConditionContext: function(index, candles, indicators, history, params) {
+            return call('StrategyCoreContext', 'createConditionContext', null, [index, candles, indicators, history, params]);
         },
         evaluateCondition: function(conditionText, context) {
             return call('StrategyCoreContext', 'evaluateCondition', false, [conditionText, context]);
@@ -46,11 +46,14 @@ window.StrategyCore = (function() {
         calculateSignals: function(candles, params, indicators, history) {
             return call('StrategyCoreSignals', 'calculateSignals', [], [candles, params, indicators, history]);
         },
-        isTradingHour: function(timestamp) {
-            return call('StrategyCoreContext', 'isTradingHour', false, [timestamp]);
+        isTradingHour: function(timestamp, params) {
+            return call('StrategyCoreContext', 'isTradingHour', false, [timestamp, params]);
         },
-        enrichDataWithTradingHours: function(candles) {
-            return call('StrategyCoreContext', 'enrichDataWithTradingHours', candles, [candles]);
+        getSessionInfo: function(timestamp, params) {
+            return call('StrategyCoreContext', 'getSessionInfo', null, [timestamp, params]);
+        },
+        enrichDataWithTradingHours: function(candles, params) {
+            return call('StrategyCoreContext', 'enrichDataWithTradingHours', candles, [candles, params]);
         }
     };
 })();

@@ -4,43 +4,126 @@
 window.StrategyCoreContext = (function() {
     'use strict';
 
+    const SESSION_LABELS = Object.freeze({
+        closed: 'Closed',
+        asia: 'Asia',
+        europe: 'Europe',
+        us: 'US'
+    });
+
     function log(message) {
         if (typeof window.addLog === 'function') {
             window.addLog(message);
         }
     }
 
-    function isTradingHour(timestamp) {
-        if (!timestamp) return false;
+    function resolveTradingTimeSettings(params) {
+        const source = params || window.Strategy?.params || {};
+        return {
+            tradingOpenDayUtc: Math.max(0, Math.min(6, Number(source.tradingOpenDayUtc ?? 1))),
+            tradingOpenHourUtc: Math.max(0, Math.min(23, Number(source.tradingOpenHourUtc ?? 0))),
+            tradingOpenMinuteUtc: Math.max(0, Math.min(59, Number(source.tradingOpenMinuteUtc ?? 0))),
+            tradingCloseDayUtc: Math.max(0, Math.min(6, Number(source.tradingCloseDayUtc ?? 5))),
+            tradingCloseHourUtc: Math.max(0, Math.min(23, Number(source.tradingCloseHourUtc ?? 22))),
+            tradingCloseMinuteUtc: Math.max(0, Math.min(59, Number(source.tradingCloseMinuteUtc ?? 0))),
+            asiaSessionStartHourUtc: Math.max(0, Math.min(23, Number(source.asiaSessionStartHourUtc ?? 0))),
+            europeSessionStartHourUtc: Math.max(0, Math.min(23, Number(source.europeSessionStartHourUtc ?? 7))),
+            usSessionStartHourUtc: Math.max(0, Math.min(23, Number(source.usSessionStartHourUtc ?? 13)))
+        };
+    }
+
+    function getSessionKeyForMinute(minuteOfDay, settings) {
+        const markers = [
+            { key: 'asia', minute: settings.asiaSessionStartHourUtc * 60 },
+            { key: 'europe', minute: settings.europeSessionStartHourUtc * 60 },
+            { key: 'us', minute: settings.usSessionStartHourUtc * 60 }
+        ].sort((a, b) => a.minute - b.minute);
+
+        let current = markers[markers.length - 1].key;
+        for (const marker of markers) {
+            if (minuteOfDay >= marker.minute) {
+                current = marker.key;
+            } else {
+                break;
+            }
+        }
+        return current;
+    }
+
+    function isTradingHour(timestamp, params) {
+        return getSessionInfo(timestamp, params).isTradingHour;
+    }
+
+    function getSessionInfo(timestamp, params) {
+        if (!timestamp) {
+            return {
+                isTradingHour: false,
+                isWeekend: false,
+                dayOfWeek: null,
+                hourUtc: null,
+                minuteUtc: null,
+                sessionKey: 'closed',
+                sessionLabel: SESSION_LABELS.closed
+            };
+        }
 
         const ts = typeof timestamp === 'string' ? parseInt(timestamp, 10) : timestamp;
         const date = new Date(ts * 1000);
         const dayOfWeek = date.getUTCDay();
         const hours = date.getUTCHours();
+        const minutes = date.getUTCMinutes();
+        const minuteOfDay = (hours * 60) + minutes;
+        const weekMinute = (dayOfWeek * 24 * 60) + minuteOfDay;
+        const settings = resolveTradingTimeSettings(params);
+        const openMinute = (settings.tradingOpenDayUtc * 24 * 60) + (settings.tradingOpenHourUtc * 60) + settings.tradingOpenMinuteUtc;
+        const closeMinute = (settings.tradingCloseDayUtc * 24 * 60) + (settings.tradingCloseHourUtc * 60) + settings.tradingCloseMinuteUtc;
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-        if (dayOfWeek >= 1 && dayOfWeek <= 4) return true;
-        if (dayOfWeek === 5 && hours < 21) return true;
-        if (dayOfWeek === 1 && hours >= 21) return true;
+        let isTrading = false;
+        if (openMinute === closeMinute) {
+            isTrading = true;
+        } else if (openMinute < closeMinute) {
+            isTrading = weekMinute >= openMinute && weekMinute < closeMinute;
+        } else {
+            isTrading = weekMinute >= openMinute || weekMinute < closeMinute;
+        }
 
-        return false;
+        let sessionKey = 'closed';
+        if (isTrading) {
+            sessionKey = getSessionKeyForMinute(minuteOfDay, settings);
+        }
+
+        return {
+            isTradingHour: isTrading,
+            isWeekend,
+            dayOfWeek,
+            hourUtc: hours,
+            minuteUtc: minutes,
+            sessionKey,
+            sessionLabel: SESSION_LABELS[sessionKey] || sessionKey,
+            tradingTimeSettings: settings
+        };
     }
 
-    function enrichDataWithTradingHours(data) {
+    function enrichDataWithTradingHours(data, params) {
         if (!Array.isArray(data)) {
             return data;
         }
 
         return data.map(candle => ({
             ...candle,
-            isTradingHour: isTradingHour(candle.time)
+            ...getSessionInfo(candle.time, params)
         }));
     }
 
-    function createConditionContext(i, data, indicators, tradeHistory) {
+    function createConditionContext(i, data, indicators, tradeHistory, params) {
+        const activeParams = params || window.Strategy?.params || {};
+
         function c(lag) {
             const idx = i + lag;
             if (idx < 0 || idx >= data.length) return null;
-            return data[idx];
+            const candle = data[idx];
+            return candle ? { ...candle, ...getSessionInfo(candle.time, activeParams) } : null;
         }
 
         function ind(name, lag) {
@@ -60,48 +143,6 @@ window.StrategyCoreContext = (function() {
             }
 
             return name === 'bb' ? { upper: null, middle: null, lower: null } : null;
-        }
-
-        function bal(lag) {
-            const arr = window.lastBalance;
-            if (!arr) return null;
-            const idx = i + lag;
-            if (idx < 0 || idx >= arr.length) return null;
-            return arr[idx] ? arr[idx].value : null;
-        }
-
-        function readBalanceSpeed(lag, period) {
-            const arr = window.lastBalance;
-            if (!arr) return null;
-
-            const normalizedPeriod = Math.max(1, Number(period) || 1);
-            const idx = i + lag;
-            const prevIdx = idx - normalizedPeriod;
-            if (idx < 0 || idx >= arr.length || prevIdx < 0 || prevIdx >= arr.length) {
-                return null;
-            }
-
-            const currentValue = Number(arr[idx] && arr[idx].value);
-            const previousValue = Number(arr[prevIdx] && arr[prevIdx].value);
-            if (!Number.isFinite(currentValue) || !Number.isFinite(previousValue) || previousValue === 0) {
-                return null;
-            }
-
-            return ((currentValue - previousValue) / previousValue) * 100;
-        }
-
-        function balSpeed(lag, period) {
-            return readBalanceSpeed(Number(lag) || 0, period);
-        }
-
-        function balFast(lag) {
-            const period = Math.max(1, Number(window.Strategy?.params?.balFast ?? 40));
-            return readBalanceSpeed(Number(lag) || 0, period);
-        }
-
-        function balSlow(lag) {
-            const period = Math.max(1, Number(window.Strategy?.params?.balSlow ?? 160));
-            return readBalanceSpeed(Number(lag) || 0, period);
         }
 
         function lastLossWithinTf(tfCount = 2) {
@@ -164,10 +205,6 @@ window.StrategyCoreContext = (function() {
             tradeHistory: tradeHistory || [],
             c,
             ind,
-            bal,
-            balSpeed,
-            balFast,
-            balSlow,
             lastLossWithinTf,
             lossCountWithinPeriods,
 
@@ -231,10 +268,10 @@ window.StrategyCoreContext = (function() {
                 ? context.lossCountWithinPeriods
                 : function() { return 0; };
 
-            const fn = new Function('c', 'ind', 'bal', 'dealStats', 'lastLossWithinTf', 'lossCountWithinPeriods',
+            const fn = new Function('c', 'ind', 'dealStats', 'lastLossWithinTf', 'lossCountWithinPeriods',
                 `let buy = 0, sell = 0;\n${rulesCode}\nreturn { buy, sell };`
             );
-            const result = fn(context.c, context.ind, context.bal, safeDealStats, safeLastLossWithinTf, safeLossCountWithinPeriods);
+            const result = fn(context.c, context.ind, safeDealStats, safeLastLossWithinTf, safeLossCountWithinPeriods);
             if (!result || typeof result !== 'object') {
                 return { buy: 0, sell: 0 };
             }
@@ -251,6 +288,7 @@ window.StrategyCoreContext = (function() {
     return {
         log,
         isTradingHour,
+        getSessionInfo,
         enrichDataWithTradingHours,
         createConditionContext,
         evaluateCondition,

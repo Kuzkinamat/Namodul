@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>namoduL 0.2.3</title>
+    <title>namoduL 0.2.4</title>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="style.css">
 
@@ -44,7 +44,7 @@
         <div id="indicator-menu" class="menu-item">
             <button class="nav-btn">INDICATORS ▾</button>
             <div class="dropdown" onclick="event.stopPropagation()">
-                <label class="ind-row"><input type="checkbox" data-id="SMA" onchange="toggleIndicator('SMA', this.checked)">SMA</label>
+                <label class="ind-row"><input type="checkbox" data-id="Worktime" onchange="toggleIndicator('Worktime', this.checked)">Worktime</label>
                 <label class="ind-row"><input type="checkbox" data-id="BB" onchange="toggleIndicator('BB', this.checked)">Bollinger Bands</label>
                 <hr class="menu-divider">
                 <label class="ind-row"><input type="checkbox" data-id="MACD" onchange="toggleIndicator('MACD', this.checked)">MACD</label>
@@ -64,6 +64,10 @@
     </div>
 
     <div id="settings-panel">
+        <div class="settings-panel-header" data-settings-drag-handle="true">
+            <span class="settings-panel-title">Strategy Editor</span>
+            <span class="settings-panel-hint">Drag</span>
+        </div>
         <div class="settings-section">
             <div class="strategy-actions">
                 <label class="strategy-selector" for="strategy-file-select">
@@ -73,14 +77,40 @@
                 <button class="nav-btn strategy-btn" onclick="resetStrategyCode()">Reset</button>
                 <button class="nav-btn strategy-btn" onclick="applyStrategyCode()">Apply</button>
             </div>
-            <textarea class="code-editor" id="strategy-code-editor" placeholder="// Code from strategy-core.js will be loaded automatically"></textarea>
+            <div class="strategy-editor-launchers">
+                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="ind" onclick="toggleStrategyEditorWindow('ind')">Indicators</button>
+                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="mm" onclick="toggleStrategyEditorWindow('mm')">MM / Hours</button>
+                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="code" onclick="toggleStrategyEditorWindow('code')">Code</button>
+            </div>
         </div>
+    </div>
+
+    <div id="strategy-editor-ind-panel" class="floating-editor-panel">
+        <div class="floating-editor-header" data-editor-drag-handle="ind">
+            <span class="floating-editor-title">Indicators</span>
+        </div>
+        <textarea class="code-editor code-editor-split" id="strategy-ind-editor" placeholder="// Indicator settings"></textarea>
+    </div>
+
+    <div id="strategy-editor-mm-panel" class="floating-editor-panel">
+        <div class="floating-editor-header" data-editor-drag-handle="mm">
+            <span class="floating-editor-title">MM / Hours</span>
+        </div>
+        <textarea class="code-editor code-editor-split" id="strategy-mm-editor" placeholder="// Money management and trading hours"></textarea>
+    </div>
+
+    <div id="strategy-editor-code-panel" class="floating-editor-panel">
+        <div class="floating-editor-header" data-editor-drag-handle="code">
+            <span class="floating-editor-title">Code</span>
+        </div>
+        <textarea class="code-editor code-editor-main" id="strategy-code-editor" placeholder="// Strategy rules"></textarea>
     </div>
 
     <div id="panels-container">
         <div id="main-pane" class="pane-wrapper">
             <div class="v-line"></div>
             <div id="chart-main" class="chart-container"></div>
+            <div id="main-session-background"></div>
         </div>
     </div>
 
@@ -98,10 +128,12 @@
     <script src="./ind_renderer.js"></script>
     <script src="./prov-twelvedata.js"></script>
     <script src="./prov-local.js?v=20260320b"></script>
+    <script src="./strategy-(autorun)-ind.js"></script>
+    <script src="./strategy-(autorun)-mm.js"></script>
+    <script src="./strategy-(autorun)-code.js"></script>
     <script>
         window.STRATEGY_FILES = [
-            { file: 'strategy-(autorun).js', label: 'Autorun' },
-            { file: 'strategy-(bb-stoch).js', label: 'BB + Stochastic' }
+            { file: 'strategy-(autorun).js', label: 'Autorun' }
         ];
     </script>
     <script src="./main.js"></script>

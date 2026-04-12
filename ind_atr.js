@@ -3,7 +3,7 @@
  * Measures price volatility
  */
 
-function calcATR(candles, period = 120, smoothPeriod = 60) {
+function calcATR(candles, period = 60, smoothPeriod = 60) {
   if (!Array.isArray(candles) || candles.length === 0) {
     return [];
   }

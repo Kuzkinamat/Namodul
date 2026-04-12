@@ -49,20 +49,6 @@ window.IndicatorRenderers = (function() {
         return activePanes[id];
     }
 
-    function renderSMA(data, params, chartMain, mainSeriesRefs, LightweightCharts) {
-        removeMainSeries('SMA', chartMain, mainSeriesRefs);
-        mainSeriesRefs.SMA = [];
-        const s = chartMain.addSeries(LightweightCharts.LineSeries, {
-            color: '#ff00a6',
-            lineWidth: 1,
-            lastValueVisible: false,
-            priceLineVisible: false
-        });
-        const sma = window.calcSMA(data, params.smaPeriod);
-        s.setData(sma.map(point => toLinePoint(point.time, point.value)));
-        mainSeriesRefs.SMA.push(s);
-    }
-
     function renderBB(data, params, chartMain, mainSeriesRefs, LightweightCharts) {
         removeMainSeries('BB', chartMain, mainSeriesRefs);
         mainSeriesRefs.BB = [];
@@ -224,8 +210,16 @@ window.IndicatorRenderers = (function() {
             syncAll,
             onResize,
             addLog,
-            LightweightCharts
+            LightweightCharts,
+            setWorktimeOverlayVisible
         } = ctx;
+
+        if (id === 'Worktime') {
+            if (typeof setWorktimeOverlayVisible === 'function') {
+                setWorktimeOverlayVisible(isChecked);
+            }
+            return true;
+        }
 
         if (!isChecked) {
             removeMainSeries(id, chartMain, mainSeriesRefs);
@@ -235,11 +229,6 @@ window.IndicatorRenderers = (function() {
         }
 
         if (!data.length) {
-            return true;
-        }
-
-        if (id === 'SMA') {
-            renderSMA(data, params, chartMain, mainSeriesRefs, LightweightCharts);
             return true;
         }
 

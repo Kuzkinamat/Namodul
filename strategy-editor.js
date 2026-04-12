@@ -7,9 +7,17 @@
     const STRATEGY_STORAGE_KEY = 'selectedStrategyFile';
     const STRATEGY_FILE_PATTERN = /^strategy-(?:params|\([a-z0-9-]+\))\.js$/i;
     const AUTORUN_STRATEGY = 'strategy-(autorun).js';
+    const SETTINGS_PANEL_POSITION_KEY = 'settingsPanelPosition';
+    const SETTINGS_PANEL_MARGIN = 8;
+    const SETTINGS_PANEL_MIN_TOP = 53;
+    const EDITOR_PANEL_POSITION_KEY_PREFIX = 'strategyEditorPanelPosition:';
+    const FLOATING_PANEL_DEFAULTS = Object.freeze({
+        ind: { left: 24, top: 98 },
+        mm: { left: 24, top: 300 },
+        code: { left: 380, top: 98 }
+    });
     const FALLBACK_STRATEGIES = [
-        { file: 'strategy-(autorun).js', label: 'Autorun' },
-        { file: 'strategy-(bb-stoch).js', label: 'BB + Stochastic' }
+        { file: 'strategy-(autorun).js', label: 'Autorun' }
     ];
 
     let resolveInitialStrategyReady;
@@ -162,7 +170,7 @@
                 : {});
 
         const idMap = {
-            useSMA: 'SMA',
+            useWorktime: 'Worktime',
             useBB: 'BB',
             useATR: 'ATR',
             useMACD: 'MACD',
@@ -214,39 +222,460 @@
         return document.getElementById('strategy-code-editor');
     }
 
-    function cacheCurrentEditorValue() {
-        const editor = getEditor();
-        const activeFile = window.__activeStrategyFile;
-        if (!editor || !activeFile) {
+    function getIndicatorsEditor() {
+        return document.getElementById('strategy-ind-editor');
+    }
+
+    function getMoneyManagementEditor() {
+        return document.getElementById('strategy-mm-editor');
+    }
+
+    function getEditorMap() {
+        return {
+            ind: getIndicatorsEditor(),
+            mm: getMoneyManagementEditor(),
+            code: getEditor()
+        };
+    }
+
+    function getFloatingEditorPanel(type) {
+        return document.getElementById('strategy-editor-' + type + '-panel');
+    }
+
+    function getFloatingEditorPanels() {
+        return {
+            ind: getFloatingEditorPanel('ind'),
+            mm: getFloatingEditorPanel('mm'),
+            code: getFloatingEditorPanel('code')
+        };
+    }
+
+    function getEditorToggleButton(type) {
+        return document.querySelector('[data-editor-toggle="' + type + '"]');
+    }
+
+    function getSettingsPanel() {
+        return document.getElementById('settings-panel');
+    }
+
+    function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+    }
+
+    function getStoredSettingsPanelPosition() {
+        try {
+            if (!window.localStorage) {
+                return null;
+            }
+
+            const raw = window.localStorage.getItem(SETTINGS_PANEL_POSITION_KEY);
+            if (!raw) {
+                return null;
+            }
+
+            const parsed = JSON.parse(raw);
+            if (!parsed || !Number.isFinite(parsed.left) || !Number.isFinite(parsed.top)) {
+                return null;
+            }
+
+            return parsed;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function storeSettingsPanelPosition(left, top) {
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem(SETTINGS_PANEL_POSITION_KEY, JSON.stringify({ left, top }));
+            }
+        } catch (err) {
+            log('Не удалось сохранить позицию окна стратегии: ' + err.message);
+        }
+    }
+
+    function getCurrentSettingsPanelLeft(panel) {
+        const parsed = parseFloat(panel.style.left);
+        return Number.isFinite(parsed) ? parsed : SETTINGS_PANEL_MARGIN;
+    }
+
+    function getCurrentSettingsPanelTop(panel) {
+        const parsed = parseFloat(panel.style.top);
+        return Number.isFinite(parsed) ? parsed : SETTINGS_PANEL_MIN_TOP;
+    }
+
+    function updateSettingsPanelMaxHeight(panel, top) {
+        const nextTop = Number.isFinite(top) ? top : getCurrentSettingsPanelTop(panel);
+        const maxHeight = Math.max(220, Math.floor(window.innerHeight - nextTop - SETTINGS_PANEL_MARGIN));
+        panel.style.maxHeight = maxHeight + 'px';
+    }
+
+    function applySettingsPanelPosition(left, top, options = {}) {
+        const panel = getSettingsPanel();
+        if (!panel) {
             return;
         }
 
-        getSourceCache()[activeFile] = editor.value;
+        const persist = options.persist !== false;
+        updateSettingsPanelMaxHeight(panel, top);
+
+        const panelWidth = Math.ceil(panel.getBoundingClientRect().width || panel.offsetWidth || 0);
+        const panelHeight = Math.ceil(panel.getBoundingClientRect().height || panel.offsetHeight || 0);
+        const maxLeft = Math.max(SETTINGS_PANEL_MARGIN, Math.floor(window.innerWidth - panelWidth - SETTINGS_PANEL_MARGIN));
+        const maxTop = Math.max(SETTINGS_PANEL_MIN_TOP, Math.floor(window.innerHeight - panelHeight - SETTINGS_PANEL_MARGIN));
+
+        const nextLeft = clamp(Math.round(left), SETTINGS_PANEL_MARGIN, maxLeft);
+        const nextTop = clamp(Math.round(top), SETTINGS_PANEL_MIN_TOP, maxTop);
+
+        panel.style.left = nextLeft + 'px';
+        panel.style.top = nextTop + 'px';
+        updateSettingsPanelMaxHeight(panel, nextTop);
+
+        const adjustedHeight = Math.ceil(panel.getBoundingClientRect().height || panel.offsetHeight || 0);
+        const adjustedMaxTop = Math.max(SETTINGS_PANEL_MIN_TOP, Math.floor(window.innerHeight - adjustedHeight - SETTINGS_PANEL_MARGIN));
+        const finalTop = clamp(nextTop, SETTINGS_PANEL_MIN_TOP, adjustedMaxTop);
+
+        if (finalTop !== nextTop) {
+            panel.style.top = finalTop + 'px';
+            updateSettingsPanelMaxHeight(panel, finalTop);
+        }
+
+        if (persist) {
+            storeSettingsPanelPosition(nextLeft, finalTop);
+        }
     }
 
-    function syncSettingsPanelWidth() {
-        const panel = document.getElementById('settings-panel');
-        const editor = getEditor();
+    function ensureSettingsPanelVisible() {
+        const panel = getSettingsPanel();
+        if (!panel) {
+            return;
+        }
+
+        applySettingsPanelPosition(
+            getCurrentSettingsPanelLeft(panel),
+            getCurrentSettingsPanelTop(panel),
+            { persist: false }
+        );
+    }
+
+    function initSettingsPanelPosition() {
+        const panel = getSettingsPanel();
+        if (!panel) {
+            return;
+        }
+
+        const storedPosition = getStoredSettingsPanelPosition();
+        const initialLeft = storedPosition ? storedPosition.left : SETTINGS_PANEL_MARGIN;
+        const initialTop = storedPosition ? storedPosition.top : SETTINGS_PANEL_MIN_TOP;
+        applySettingsPanelPosition(initialLeft, initialTop, { persist: false });
+    }
+
+    function bindSettingsPanelDragging() {
+        const panel = getSettingsPanel();
+        const dragHandle = panel ? panel.querySelector('[data-settings-drag-handle="true"]') : null;
+        if (!panel || !dragHandle || dragHandle.dataset.dragBound === '1') {
+            return;
+        }
+
+        dragHandle.dataset.dragBound = '1';
+
+        dragHandle.addEventListener('pointerdown', function(event) {
+            if (event.button !== 0 && event.pointerType !== 'touch') {
+                return;
+            }
+
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const startLeft = getCurrentSettingsPanelLeft(panel);
+            const startTop = getCurrentSettingsPanelTop(panel);
+
+            panel.classList.add('dragging');
+            if (typeof dragHandle.setPointerCapture === 'function') {
+                dragHandle.setPointerCapture(event.pointerId);
+            }
+
+            const handlePointerMove = function(moveEvent) {
+                applySettingsPanelPosition(
+                    startLeft + (moveEvent.clientX - startX),
+                    startTop + (moveEvent.clientY - startY),
+                    { persist: false }
+                );
+            };
+
+            const stopDragging = function(endEvent) {
+                panel.classList.remove('dragging');
+                dragHandle.removeEventListener('pointermove', handlePointerMove);
+                dragHandle.removeEventListener('pointerup', stopDragging);
+                dragHandle.removeEventListener('pointercancel', stopDragging);
+                dragHandle.removeEventListener('lostpointercapture', stopDragging);
+
+                if (typeof dragHandle.releasePointerCapture === 'function' && dragHandle.hasPointerCapture(event.pointerId)) {
+                    dragHandle.releasePointerCapture(event.pointerId);
+                }
+
+                applySettingsPanelPosition(
+                    getCurrentSettingsPanelLeft(panel),
+                    getCurrentSettingsPanelTop(panel),
+                    { persist: true }
+                );
+
+                if (endEvent) {
+                    endEvent.preventDefault();
+                }
+            };
+
+            dragHandle.addEventListener('pointermove', handlePointerMove);
+            dragHandle.addEventListener('pointerup', stopDragging);
+            dragHandle.addEventListener('pointercancel', stopDragging);
+            dragHandle.addEventListener('lostpointercapture', stopDragging);
+            event.preventDefault();
+        });
+    }
+
+    function getStoredFloatingPanelPosition(type) {
+        try {
+            if (!window.localStorage) {
+                return null;
+            }
+
+            const raw = window.localStorage.getItem(EDITOR_PANEL_POSITION_KEY_PREFIX + type);
+            if (!raw) {
+                return null;
+            }
+
+            const parsed = JSON.parse(raw);
+            if (!parsed || !Number.isFinite(parsed.left) || !Number.isFinite(parsed.top)) {
+                return null;
+            }
+
+            return parsed;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function storeFloatingPanelPosition(type, left, top) {
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem(EDITOR_PANEL_POSITION_KEY_PREFIX + type, JSON.stringify({ left, top }));
+            }
+        } catch (err) {
+            log('Не удалось сохранить позицию окна редактора ' + type + ': ' + err.message);
+        }
+    }
+
+    function getCurrentFloatingPanelLeft(panel, type) {
+        const parsed = parseFloat(panel.style.left);
+        return Number.isFinite(parsed) ? parsed : FLOATING_PANEL_DEFAULTS[type].left;
+    }
+
+    function getCurrentFloatingPanelTop(panel, type) {
+        const parsed = parseFloat(panel.style.top);
+        return Number.isFinite(parsed) ? parsed : FLOATING_PANEL_DEFAULTS[type].top;
+    }
+
+    function syncFloatingPanelSize(type) {
+        const panel = getFloatingEditorPanel(type);
+        const editor = getEditorMap()[type];
         if (!panel || !editor) {
             return;
         }
 
         if (!editor.dataset.widthInitialized) {
-            editor.style.width = Math.floor(window.innerWidth * 0.4) + 'px';
+            editor.style.width = (type === 'code' ? Math.floor(window.innerWidth * 0.4) : 360) + 'px';
             editor.dataset.widthInitialized = '1';
         }
 
-        const panelStyles = window.getComputedStyle(panel);
-        const paddingLeft = parseFloat(panelStyles.paddingLeft) || 0;
-        const paddingRight = parseFloat(panelStyles.paddingRight) || 0;
-        const maxEditorWidth = Math.max(240, Math.floor(window.innerWidth - paddingLeft - paddingRight - 16));
+        const styles = window.getComputedStyle(panel);
+        const paddingLeft = parseFloat(styles.paddingLeft) || 0;
+        const paddingRight = parseFloat(styles.paddingRight) || 0;
+        const width = Math.ceil(editor.offsetWidth + paddingLeft + paddingRight);
+        panel.style.width = width + 'px';
+    }
 
-        if (editor.offsetWidth > maxEditorWidth) {
-            editor.style.width = maxEditorWidth + 'px';
+    function applyFloatingPanelPosition(type, left, top, options = {}) {
+        const panel = getFloatingEditorPanel(type);
+        if (!panel) {
+            return;
         }
 
-        const nextWidth = Math.ceil(editor.offsetWidth + paddingLeft + paddingRight);
-        panel.style.width = nextWidth + 'px';
+        const persist = options.persist !== false;
+        syncFloatingPanelSize(type);
+        const panelWidth = Math.ceil(panel.getBoundingClientRect().width || panel.offsetWidth || 0);
+        const panelHeight = Math.ceil(panel.getBoundingClientRect().height || panel.offsetHeight || 0);
+        const maxLeft = Math.max(SETTINGS_PANEL_MARGIN, Math.floor(window.innerWidth - panelWidth - SETTINGS_PANEL_MARGIN));
+        const maxTop = Math.max(SETTINGS_PANEL_MIN_TOP, Math.floor(window.innerHeight - panelHeight - SETTINGS_PANEL_MARGIN));
+        const nextLeft = clamp(Math.round(left), SETTINGS_PANEL_MARGIN, maxLeft);
+        const nextTop = clamp(Math.round(top), SETTINGS_PANEL_MIN_TOP, maxTop);
+
+        panel.style.left = nextLeft + 'px';
+        panel.style.top = nextTop + 'px';
+
+        if (persist) {
+            storeFloatingPanelPosition(type, nextLeft, nextTop);
+        }
+    }
+
+    function syncFloatingPanelLayout(options = {}) {
+        const panels = getFloatingEditorPanels();
+        Object.entries(panels).forEach(function(entry) {
+            const type = entry[0];
+            const panel = entry[1];
+            if (!panel) {
+                return;
+            }
+
+            applyFloatingPanelPosition(
+                type,
+                getCurrentFloatingPanelLeft(panel, type),
+                getCurrentFloatingPanelTop(panel, type),
+                { persist: options.persist === true }
+            );
+        });
+    }
+
+    function initFloatingPanelPositions() {
+        Object.keys(FLOATING_PANEL_DEFAULTS).forEach(function(type) {
+            const stored = getStoredFloatingPanelPosition(type);
+            const defaults = FLOATING_PANEL_DEFAULTS[type];
+            applyFloatingPanelPosition(
+                type,
+                stored ? stored.left : defaults.left,
+                stored ? stored.top : defaults.top,
+                { persist: false }
+            );
+        });
+    }
+
+    function bindFloatingPanelDragging() {
+        Object.keys(FLOATING_PANEL_DEFAULTS).forEach(function(type) {
+            const panel = getFloatingEditorPanel(type);
+            const dragHandle = panel ? panel.querySelector('[data-editor-drag-handle="' + type + '"]') : null;
+            if (!panel || !dragHandle || dragHandle.dataset.dragBound === '1') {
+                return;
+            }
+
+            dragHandle.dataset.dragBound = '1';
+            dragHandle.addEventListener('pointerdown', function(event) {
+                if (event.button !== 0 && event.pointerType !== 'touch') {
+                    return;
+                }
+
+                const startX = event.clientX;
+                const startY = event.clientY;
+                const startLeft = getCurrentFloatingPanelLeft(panel, type);
+                const startTop = getCurrentFloatingPanelTop(panel, type);
+
+                panel.classList.add('dragging');
+                if (typeof dragHandle.setPointerCapture === 'function') {
+                    dragHandle.setPointerCapture(event.pointerId);
+                }
+
+                const handlePointerMove = function(moveEvent) {
+                    applyFloatingPanelPosition(
+                        type,
+                        startLeft + (moveEvent.clientX - startX),
+                        startTop + (moveEvent.clientY - startY),
+                        { persist: false }
+                    );
+                };
+
+                const stopDragging = function(endEvent) {
+                    panel.classList.remove('dragging');
+                    dragHandle.removeEventListener('pointermove', handlePointerMove);
+                    dragHandle.removeEventListener('pointerup', stopDragging);
+                    dragHandle.removeEventListener('pointercancel', stopDragging);
+                    dragHandle.removeEventListener('lostpointercapture', stopDragging);
+
+                    if (typeof dragHandle.releasePointerCapture === 'function' && dragHandle.hasPointerCapture(event.pointerId)) {
+                        dragHandle.releasePointerCapture(event.pointerId);
+                    }
+
+                    applyFloatingPanelPosition(
+                        type,
+                        getCurrentFloatingPanelLeft(panel, type),
+                        getCurrentFloatingPanelTop(panel, type),
+                        { persist: true }
+                    );
+
+                    if (endEvent) {
+                        endEvent.preventDefault();
+                    }
+                };
+
+                dragHandle.addEventListener('pointermove', handlePointerMove);
+                dragHandle.addEventListener('pointerup', stopDragging);
+                dragHandle.addEventListener('pointercancel', stopDragging);
+                dragHandle.addEventListener('lostpointercapture', stopDragging);
+                event.preventDefault();
+            });
+        });
+    }
+
+    function isFloatingEditorOpen(type) {
+        const panel = getFloatingEditorPanel(type);
+        return Boolean(panel && panel.classList.contains('open'));
+    }
+
+    function updateEditorToggleButtons() {
+        Object.keys(FLOATING_PANEL_DEFAULTS).forEach(function(type) {
+            const button = getEditorToggleButton(type);
+            if (!button) {
+                return;
+            }
+
+            button.classList.toggle('active', isFloatingEditorOpen(type));
+        });
+    }
+
+    function setFloatingEditorOpen(type, isOpen) {
+        const panel = getFloatingEditorPanel(type);
+        if (!panel) {
+            return;
+        }
+
+        panel.classList.toggle('open', isOpen);
+        if (isOpen) {
+            const openPanels = Object.values(getFloatingEditorPanels()).filter(Boolean);
+            const maxZIndex = openPanels.reduce(function(maxValue, currentPanel) {
+                const value = Number(window.getComputedStyle(currentPanel).zIndex) || 1998;
+                return Math.max(maxValue, value);
+            }, 1998);
+            panel.style.zIndex = String(maxZIndex + 1);
+            syncFloatingPanelLayout();
+        }
+
+        updateEditorToggleButtons();
+    }
+
+    function toggleStrategyEditorWindow(type) {
+        setFloatingEditorOpen(type, !isFloatingEditorOpen(type));
+    }
+
+    function focusStrategyEditorWindow(type) {
+        setFloatingEditorOpen(type, true);
+    }
+
+    function syncSettingsPanelWidth() {
+        const panel = getSettingsPanel();
+        if (!panel) {
+            return;
+        }
+
+        panel.style.width = '';
+    }
+
+    function syncSettingsPanelLayout(options = {}) {
+        syncSettingsPanelWidth();
+        ensureSettingsPanelVisible();
+        syncFloatingPanelLayout({ persist: options.persist === true });
+
+        if (options.persist === true) {
+            const panel = getSettingsPanel();
+            if (panel) {
+                storeSettingsPanelPosition(getCurrentSettingsPanelLeft(panel), getCurrentSettingsPanelTop(panel));
+            }
+        }
     }
 
     function getSelectedEditorFile() {
@@ -254,11 +683,14 @@
         return selected ? selected.file : null;
     }
 
-    function getSourceCache() {
-        if (!window.__strategySourceByFile || typeof window.__strategySourceByFile !== 'object') {
-            window.__strategySourceByFile = {};
-        }
-        return window.__strategySourceByFile;
+    function getStrategyPartFiles(fileName) {
+        const baseName = String(fileName || '').replace(/\.js$/i, '');
+        return {
+            main: fileName,
+            ind: baseName + '-ind.js',
+            mm: baseName + '-mm.js',
+            code: baseName + '-code.js'
+        };
     }
 
     function validateAppliedFile(fileName) {
@@ -267,10 +699,23 @@
             && typeof window.StrategyParams.getDefaultParams === 'function';
     }
 
+    async function fetchTextFile(fileName, options = {}) {
+        const sourceUrl = options.forceReload === true
+            ? ('./' + fileName + '?v=' + Date.now())
+            : ('./' + fileName);
+
+        const response = await fetch(sourceUrl, { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+
+        return response.text();
+    }
+
     async function loadStrategyCode(options = {}) {
-        const editor = document.getElementById('strategy-code-editor');
-        if (!editor) {
-            log('Ошибка: текстовое поле strategy-code-editor не найдено');
+        const editors = getEditorMap();
+        if (!editors.ind || !editors.mm || !editors.code) {
+            log('Ошибка: текстовые поля редактора не найдены');
             return null;
         }
 
@@ -282,30 +727,26 @@
 
         window.__activeStrategyFile = fileName;
         storeSelectedStrategyFile(fileName);
-
-        const sourceCache = getSourceCache();
-        const forceReload = options.forceReload === true;
-        if (!forceReload && typeof sourceCache[fileName] === 'string') {
-            editor.value = sourceCache[fileName];
-            log('Код загружен из памяти: ' + fileName);
-            return sourceCache[fileName];
-        }
-
-        const sourceUrl = forceReload
-            ? ('./' + fileName + '?v=' + Date.now())
-            : ('./' + fileName);
+        const partFiles = getStrategyPartFiles(fileName);
 
         try {
-            const response = await fetch(sourceUrl, { cache: 'no-store' });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
+            const [indText, mmText, codeText, mainText] = await Promise.all([
+                fetchTextFile(partFiles.ind, options),
+                fetchTextFile(partFiles.mm, options),
+                fetchTextFile(partFiles.code, options),
+                fetchTextFile(partFiles.main, options)
+            ]);
 
-            const text = await response.text();
-            sourceCache[fileName] = text;
-            window.__strategyCoreSource = text;
-            editor.value = text;
-            return text;
+            editors.ind.value = indText;
+            editors.mm.value = mmText;
+            editors.code.value = codeText;
+            window.__strategyCoreSource = mainText;
+            return {
+                ind: indText,
+                mm: mmText,
+                code: codeText,
+                main: mainText
+            };
         } catch (err) {
             log('Не удалось загрузить файл ' + fileName + ': ' + err.message);
             return null;
@@ -331,15 +772,17 @@
     }
 
     function applyStrategyCode(options = {}) {
-        const editor = document.getElementById('strategy-code-editor');
-        if (!editor) {
-            log('Ошибка: текстовое поле strategy-code-editor не найдено');
+        const editors = getEditorMap();
+        if (!editors.ind || !editors.mm || !editors.code) {
+            log('Ошибка: текстовые поля редактора не найдены');
             return false;
         }
 
-        const code = editor.value.trim();
-        if (!code) {
-            log('Код стратегии пуст');
+        const indCode = editors.ind.value.trim();
+        const mmCode = editors.mm.value.trim();
+        const strategyCode = editors.code.value.trim();
+        if (!indCode || !mmCode || !strategyCode) {
+            log('Один из редакторов пуст');
             return false;
         }
 
@@ -349,26 +792,28 @@
             return false;
         }
 
-        const sourceCache = getSourceCache();
-        const previousSource = typeof sourceCache[fileName] === 'string' ? sourceCache[fileName] : '';
-        const isSameSource = previousSource.trim() === code;
-
-        if (isSameSource) {
-            log('Код не изменён, повторный запуск без переинициализации');
-            rerunStrategyPreview();
-            return true;
-        }
-
         const previousDefaults = window.StrategyParams;
-        const previousCache = { ...sourceCache };
+        const previousInd = window.StrategyAutorunInd;
+        const previousMM = window.StrategyAutorunMM;
+        const previousCode = window.StrategyAutorunCode;
+        const partFiles = getStrategyPartFiles(fileName);
 
         try {
-            const execute = new Function(code);
-            execute();
+            new Function(indCode)();
+            new Function(mmCode)();
+            new Function(strategyCode)();
 
-            if (validateAppliedFile(fileName)) {
-                sourceCache[fileName] = code;
-                window.__strategyCoreSource = code;
+            const mainSource = window.__strategyCoreSource || '';
+            const shouldReloadMain = !mainSource || options.forceReload === true;
+
+            const finalize = function(mainCode) {
+                new Function(mainCode)();
+
+                if (!validateAppliedFile(fileName)) {
+                    throw new Error('Код не прошел проверку для файла ' + fileName);
+                }
+
+                window.__strategyCoreSource = mainCode;
                 window.__activeStrategyFile = fileName;
                 storeSelectedStrategyFile(fileName);
                 log('Код успешно применён: ' + fileName);
@@ -380,14 +825,29 @@
                 syncIndicatorSelectionFromStrategyParams();
                 rerunStrategyPreview();
                 return true;
-            } else {
-                window.StrategyParams = previousDefaults;
-                window.__strategySourceByFile = previousCache;
-                log('Ошибка: код не прошел проверку для файла ' + fileName);
+            };
+
+            if (shouldReloadMain) {
+                return fetchTextFile(partFiles.main, { forceReload: true })
+                    .then(function(mainCode) {
+                        return finalize(mainCode);
+                    })
+                    .catch(function(err) {
+                        window.StrategyParams = previousDefaults;
+                        window.StrategyAutorunInd = previousInd;
+                        window.StrategyAutorunMM = previousMM;
+                        window.StrategyAutorunCode = previousCode;
+                        log('Ошибка выполнения кода: ' + err.message);
+                        return false;
+                    });
             }
+
+            return finalize(mainSource);
         } catch (err) {
             window.StrategyParams = previousDefaults;
-            window.__strategySourceByFile = previousCache;
+            window.StrategyAutorunInd = previousInd;
+            window.StrategyAutorunMM = previousMM;
+            window.StrategyAutorunCode = previousCode;
             log('Ошибка выполнения кода: ' + err.message);
         }
 
@@ -399,8 +859,6 @@
             settleInitialStrategyReady();
             return false;
         }
-
-        cacheCurrentEditorValue();
 
         const select = getStrategySelect();
         if (select && select.value !== fileName) {
@@ -419,21 +877,19 @@
 
         const applied = options.apply === false
             ? true
-            : applyStrategyCode({ fileName });
+            : await Promise.resolve(applyStrategyCode({ fileName, forceReload: false }));
         settleInitialStrategyReady();
         return applied;
     }
 
     function resetStrategyCode() {
-        const editor = document.getElementById('strategy-code-editor');
-        if (!editor) {
-            log('Ошибка: текстовое поле strategy-code-editor не найдено');
+        const editors = getEditorMap();
+        if (!editors.ind || !editors.mm || !editors.code) {
+            log('Ошибка: текстовые поля редактора не найдены');
             return;
         }
 
         const fileName = getSelectedEditorFile();
-        const sourceCache = getSourceCache();
-        delete sourceCache[fileName];
         selectStrategy(fileName, { forceReload: true, apply: false });
     }
 
@@ -450,6 +906,7 @@
         hasActiveStrategy: function() {
             return Boolean(getCurrentStrategyDefinition());
         },
+        ensureSettingsPanelVisible,
         syncIndicatorSelectionFromStrategyParams,
         refreshActiveIndicators,
         loadStrategyCode,
@@ -464,8 +921,18 @@
     window.selectStrategy = selectStrategy;
     window.resetStrategyCode = resetStrategyCode;
     window.applyAllSettings = applyAllSettings;
+    window.focusStrategyEditorWindow = focusStrategyEditorWindow;
+    window.toggleStrategyEditorWindow = toggleStrategyEditorWindow;
 
     document.addEventListener('DOMContentLoaded', async function() {
+        try {
+            delete window.__strategySourceByFile;
+            if (window.localStorage) {
+                window.localStorage.removeItem(STRATEGY_STORAGE_KEY);
+            }
+        } catch (err) {
+        }
+
         const selectedStrategy = syncStrategySelectOptions();
 
         const strategySelect = getStrategySelect();
@@ -492,20 +959,31 @@
 
         selectStrategy(initialFile, { forceReload: true, apply: true });
 
-        syncSettingsPanelWidth();
+        initSettingsPanelPosition();
+        initFloatingPanelPositions();
+        syncSettingsPanelLayout();
+        bindSettingsPanelDragging();
+        bindFloatingPanelDragging();
+        updateEditorToggleButtons();
 
         const editor = getEditor();
         if (editor && typeof window.ResizeObserver === 'function') {
             const ro = new ResizeObserver(function() {
-                syncSettingsPanelWidth();
+                syncSettingsPanelLayout();
             });
-            ro.observe(editor);
+            Object.values(getEditorMap()).forEach(function(currentEditor) {
+                if (currentEditor) {
+                    ro.observe(currentEditor);
+                }
+            });
         }
 
-        window.addEventListener('resize', syncSettingsPanelWidth);
+        window.addEventListener('resize', function() {
+            syncSettingsPanelLayout();
+        });
 
         setTimeout(function() {
-            const panel = document.getElementById('settings-panel');
+            const panel = getSettingsPanel();
             if (!panel) {
                 return;
             }
@@ -513,10 +991,15 @@
             const observer = new MutationObserver(function(mutations) {
                 mutations.forEach(function(mutation) {
                     if (mutation.attributeName === 'class' && panel.classList.contains('open')) {
+                        syncSettingsPanelLayout();
                         const fileName = getSelectedEditorFile();
                         if (fileName) {
                             loadStrategyCode({ forceReload: true, fileName });
                         }
+                    } else if (mutation.attributeName === 'class' && !panel.classList.contains('open')) {
+                        Object.keys(FLOATING_PANEL_DEFAULTS).forEach(function(type) {
+                            setFloatingEditorOpen(type, false);
+                        });
                     }
                 });
             });

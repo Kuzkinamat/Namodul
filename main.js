@@ -80,8 +80,151 @@ const candleSeries = chartMain.addSeries(LightweightCharts.CandlestickSeries, {
     upColor: '#26a69a', downColor: '#ef5350', lastValueVisible: false, priceLineVisible: false});
 window.candleSeries = candleSeries;
 
+const mainPane = document.getElementById('main-pane');
+const chartMainContainer = document.getElementById('chart-main');
+const mainSessionBackground = document.getElementById('main-session-background');
+const WORKTIME_STRIP_HEIGHT = 8;
+
+const SESSION_BACKGROUND_COLORS = Object.freeze({
+    closed: '#c94b4b',
+    asia: '#3d7eff',
+    europe: '#26a96c',
+    us: '#26a96c'
+});
+
+let mainSessionBackgroundFrame = null;
+let isWorktimeOverlayEnabled = false;
+
+function getMainBackgroundContext() {
+    if (!mainSessionBackground) {
+        return null;
+    }
+
+    const width = mainPane ? mainPane.clientWidth : 0;
+    const height = WORKTIME_STRIP_HEIGHT;
+    if (!width || !height) {
+        return null;
+    }
+
+    mainSessionBackground.style.width = width + 'px';
+    mainSessionBackground.style.height = height + 'px';
+    return { width, height };
+}
+
+function getSessionKey(candle) {
+    if (!candle) {
+        return 'closed';
+    }
+    const params = window.Strategy?.params || window.StrategyCore?.getDefaultParams?.() || {};
+    const sessionInfo = window.StrategyCore && typeof window.StrategyCore.getSessionInfo === 'function'
+        ? window.StrategyCore.getSessionInfo(candle.time, params)
+        : candle;
+    if (!sessionInfo || sessionInfo.isTradingHour === false) {
+        return 'closed';
+    }
+    return sessionInfo.sessionKey || 'closed';
+}
+
+function drawMainSessionBackground() {
+    const surface = getMainBackgroundContext();
+    if (!surface) {
+        return;
+    }
+
+    const { width } = surface;
+    if (!isWorktimeOverlayEnabled) {
+        mainSessionBackground.replaceChildren();
+        mainSessionBackground.style.display = 'none';
+        return;
+    }
+
+    mainSessionBackground.style.display = 'block';
+
+    if (!Array.isArray(data) || data.length === 0) {
+        mainSessionBackground.replaceChildren();
+        return;
+    }
+
+    const ts = chartMain.timeScale();
+    const visibleRange = ts.getVisibleLogicalRange();
+    if (!visibleRange) {
+        mainSessionBackground.replaceChildren();
+        return;
+    }
+
+    const visibleFrom = Math.max(0, visibleRange.from);
+    const visibleTo = Math.min(data.length - 1, visibleRange.to);
+    if (!Number.isFinite(visibleFrom) || !Number.isFinite(visibleTo) || visibleFrom >= visibleTo) {
+        mainSessionBackground.replaceChildren();
+        return;
+    }
+
+    const from = Math.max(0, Math.floor(visibleFrom));
+    const to = Math.min(data.length - 1, Math.ceil(visibleTo));
+    if (from > to) {
+        mainSessionBackground.replaceChildren();
+        return;
+    }
+
+    const visibleSpan = Math.max(1, visibleTo - visibleFrom);
+
+    let segmentStart = from;
+    let segmentKey = getSessionKey(data[from]);
+    const fragment = document.createDocumentFragment();
+
+    function flushSegment(endIndexExclusive) {
+        if (segmentStart >= endIndexExclusive) {
+            return;
+        }
+        const leftRatio = Math.max(0, Math.min(1, (segmentStart - visibleFrom) / visibleSpan));
+        const rightRatio = Math.max(0, Math.min(1, (endIndexExclusive - visibleFrom) / visibleSpan));
+        if (!Number.isFinite(leftRatio) || !Number.isFinite(rightRatio) || rightRatio <= leftRatio) {
+            return;
+        }
+        const color = SESSION_BACKGROUND_COLORS[segmentKey] || SESSION_BACKGROUND_COLORS.closed;
+        const segment = document.createElement('div');
+        segment.className = 'worktime-segment';
+        segment.style.left = (leftRatio * 100).toFixed(3) + '%';
+        segment.style.width = ((rightRatio - leftRatio) * 100).toFixed(3) + '%';
+        segment.style.background = color;
+        fragment.appendChild(segment);
+    }
+
+    for (let index = from + 1; index <= to; index++) {
+        const candle = data[index];
+        const key = getSessionKey(candle);
+        if (key !== segmentKey) {
+            flushSegment(index);
+            segmentStart = index;
+            segmentKey = key;
+        }
+    }
+    flushSegment(to + 1);
+    mainSessionBackground.replaceChildren(fragment);
+}
+
+function scheduleMainSessionBackgroundDraw() {
+    if (mainSessionBackgroundFrame !== null) {
+        return;
+    }
+    mainSessionBackgroundFrame = window.requestAnimationFrame(() => {
+        mainSessionBackgroundFrame = null;
+        drawMainSessionBackground();
+    });
+}
+
+window.updateMainSessionBackground = scheduleMainSessionBackgroundDraw;
+window.setWorktimeOverlayVisible = function(isVisible) {
+    isWorktimeOverlayEnabled = isVisible === true;
+    if (!isWorktimeOverlayEnabled) {
+        mainSessionBackground.replaceChildren();
+        mainSessionBackground.style.display = 'none';
+    }
+    scheduleMainSessionBackgroundDraw();
+};
+
 window.onresize = () => { 
-    const container = document.getElementById('main-pane');
+    const container = chartMainContainer;
     if (!container) return;
     chartMain.resize(container.clientWidth, container.clientHeight); 
     Object.entries(activePanes).forEach(([id, p]) => {
@@ -89,6 +232,7 @@ window.onresize = () => {
         const paneHeight = wrapper ? wrapper.clientHeight : 130;
         p.chart.resize(container.clientWidth, paneHeight);
     });
+    scheduleMainSessionBackgroundDraw();
 };
 
 let hasAutoEnabledBalanceOnFirstOpen = false;
@@ -263,6 +407,7 @@ async function updatePairListForCurrentSource() {
             if (currentPair) {
                 data = []; window.data = data;
                 candleSeries.setData([]);
+                scheduleMainSessionBackgroundDraw();
                 Object.keys(mainSeriesRefs).forEach(id => { mainSeriesRefs[id].forEach(s => chartMain.removeSeries(s)); delete mainSeriesRefs[id]; });
                 Object.keys(activePanes).forEach(id => { activePanes[id].chart.remove(); document.getElementById(`wrapper-${id}`)?.remove(); delete activePanes[id]; });
                 currentPair = '';
@@ -293,6 +438,7 @@ window.setDataSource = async (type) => {
     document.getElementById('source-btn').innerText = (type === 'none' ? 'SOURCE' : type.toUpperCase()) + ' ▾';
     if (type === 'none') {
         data = []; window.data = data; candleSeries.setData([]);
+        scheduleMainSessionBackgroundDraw();
         Object.keys(mainSeriesRefs).forEach(id => { mainSeriesRefs[id].forEach(s => chartMain.removeSeries(s)); delete mainSeriesRefs[id]; });
         Object.keys(activePanes).forEach(id => { activePanes[id].chart.remove(); document.getElementById(`wrapper-${id}`)?.remove(); delete activePanes[id]; });
         document.querySelectorAll('#indicator-menu input[type=\"checkbox\"]').forEach(cb => cb.checked = false);
@@ -326,11 +472,12 @@ window.setPair = async (p) => {
         data = newData;
         // Обогатить данные признаком торговых часов (если StrategyCore доступен)
         if (window.StrategyCore && window.StrategyCore.enrichDataWithTradingHours) {
-            data = window.StrategyCore.enrichDataWithTradingHours(data);
+            data = window.StrategyCore.enrichDataWithTradingHours(data, window.Strategy?.params || {});
         }
         window.data = data;
         candleSeries.setData(data);
         chartMain.timeScale().fitContent();
+        scheduleMainSessionBackgroundDraw();
         // Очистить маркеры сигналов
         if (window.Strategy && window.chartMain && window.candleSeries) {
             window.Strategy.clearSignals(window.chartMain, window.candleSeries);
@@ -483,6 +630,7 @@ function syncAll(source) {
         });
     }
     updateIndicatorValues();
+    scheduleMainSessionBackgroundDraw();
     isSyncing = false;
 }
 
@@ -509,7 +657,8 @@ window.toggleIndicator = function(id, isChecked) {
             syncAll,
             onResize: window.onresize,
             addLog,
-            LightweightCharts
+            LightweightCharts,
+            setWorktimeOverlayVisible: window.setWorktimeOverlayVisible
         });
         return;
     }
@@ -737,6 +886,10 @@ window.toggleSettings = function() {
     }
 
     panel.classList.toggle('open');
+
+    if (panel.classList.contains('open') && window.StrategyEditor && typeof window.StrategyEditor.ensureSettingsPanelVisible === 'function') {
+        window.StrategyEditor.ensureSettingsPanelVisible();
+    }
 };
 
 // applyAllSettings is provided by strategy-editor.js.

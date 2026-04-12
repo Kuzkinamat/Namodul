@@ -83,7 +83,11 @@ window.StrategyCoreSignals = (function() {
         let nextUncheckedSignal = 0;
 
         for (let i = 1; i < data.length; i++) {
-            if (resolvedParams.filterTradingHours && data[i].isTradingHour === false) {
+            const sessionInfo = typeof contextModule.getSessionInfo === 'function'
+                ? contextModule.getSessionInfo(data[i].time, resolvedParams)
+                : null;
+
+            if (resolvedParams.filterTradingHours && sessionInfo && sessionInfo.isTradingHour === false) {
                 continue;
             }
 
@@ -115,7 +119,7 @@ window.StrategyCoreSignals = (function() {
             }
 
             const mergedTradeHistory = (tradeHistory || []).concat(closedTradeHistory);
-            const context = contextModule.createConditionContext(i, data, resolvedIndicators, mergedTradeHistory);
+            const context = contextModule.createConditionContext(i, data, resolvedIndicators, mergedTradeHistory, resolvedParams);
             const { buy, sell } = contextModule.evaluateRules(resolvedParams.rules, context);
 
             if (buy >= 1) {

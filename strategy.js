@@ -7,12 +7,6 @@
     const FALLBACK_PARAMS = {
         expirationMinutes: 15,
         winPayout: 0.8,
-        balFast: 40,
-        balSlow: 160,
-        baseStake: 1,
-        useMartingale: false,
-        martingaleMultiplier: 2,
-        martingaleMaxSteps: 5,
         rules: '',
         filterTradingHours: false
     };
@@ -20,17 +14,11 @@
     const STRATEGY_SETTING_KEYS = [
         'expirationMinutes',
         'winPayout',
-        'baseStake',
-        'useMartingale',
-        'martingaleMultiplier',
-        'martingaleMaxSteps',
         'rules',
         'filterTradingHours'
     ];
 
     const INDICATOR_SETTING_KEYS = [
-        'balFast',
-        'balSlow',
         'bbPeriod',
         'bbStdDev',
         'useATR',
@@ -216,7 +204,7 @@
                 return null;
             }
 
-            return core.createConditionContext(i, data, indicators, tradeHistory || this.tradeHistory);
+            return core.createConditionContext(i, data, indicators, tradeHistory || this.tradeHistory, this.params);
         },
 
         evaluateCondition: function(condition, context) {
@@ -301,8 +289,6 @@
                 log('No signals to display');
                 return;
             }
-
-            const baseStake = this.params.baseStake || 1;
             
             // Create maps of trade results and stakes by time and type for quick lookup
             const tradeResultMap = {};
@@ -322,7 +308,7 @@
                 // Determine marker color by trade result
                 const tradeKey = `${signal.time}_${signal.type}`;
                 const tradeResult = tradeResultMap[tradeKey];
-                const dealSize = tradeStakeMap[tradeKey] || (baseStake * strength);
+                const dealSize = tradeStakeMap[tradeKey] || (Number(strength) || 1);
                 const dealSizeText = dealSize.toFixed(1);
                 
                 let markerColor;
@@ -385,10 +371,6 @@
 
             const expirationSeconds = this.getExpiration() * 60;
             const profitByCandleIndex = {};
-            const useMartingale = this.params.useMartingale === true;
-            const martingaleMultiplier = Math.max(1, Number(this.params.martingaleMultiplier ?? 2));
-            const martingaleMaxSteps = Math.max(0, Number(this.params.martingaleMaxSteps ?? 5));
-            let martingaleStep = 0;
 
             // Построить карту time→index для O(1) поиска вместо findIndex O(n)
             const timeIndexMap = new Map();
@@ -428,9 +410,7 @@
                 }
 
                 const strength = signal.type === 'buy' ? signal.buyStrength : signal.sellStrength;
-                const baseStake = (this.params.baseStake || 1) * (strength ?? 1);
-                const martingaleFactor = useMartingale ? Math.pow(martingaleMultiplier, martingaleStep) : 1;
-                const stake = baseStake * martingaleFactor;
+                const stake = Math.max(0, Number(tradeAmount) || 1) * (Number(strength) || 1);
                 const profit = isWin ? stake * winCoefficient : -stake;
 
                 if (!profitByCandleIndex[closeIndex]) {
@@ -447,51 +427,8 @@
                     result: isWin ? 'win' : 'loss',
                     profit: profit,
                     stake,
-                    martingaleStep,
                     expiration: expirationSeconds / 60
                 });
-
-                if (useMartingale) {
-                    if (isWin) {
-                        martingaleStep = 0;
-                    } else {
-                        // stopLossCnt makes a pause (freeze) in martingale on loss
-                        const stopLossCnt = Math.max(0, Number(this.params.stopLossCnt ?? 4));
-                        const stopLossPeriod = Math.max(1, Number(this.params.stopLossPeriod ?? 60));
-                        
-                        const stopActive = stopLossCnt > 0 && this.tradeHistory.length > 0;
-                        if (stopActive) {
-                            // Count losses over the last period in bars (candles)
-                            const windowStart = Math.max(0, closeIndex - stopLossPeriod);
-                            let recentLosses = 0;
-                            for (let ti = this.tradeHistory.length - 1; ti >= 0; ti--) {
-                                const t = this.tradeHistory[ti];
-                                if (t.result !== 'loss') continue;
-                                const closeIdx = timeIndexMap.get(t.closeTime);
-                                if (closeIdx === undefined) continue;
-                                if (closeIdx < windowStart) break;
-                                if (closeIdx <= closeIndex) recentLosses++;
-                            }
-                            
-                            // If losses are less than stopLossCnt, increase the step; otherwise martingale is frozen
-                            if (recentLosses < stopLossCnt) {
-                                if (martingaleStep >= martingaleMaxSteps) {
-                                    martingaleStep = 0;
-                                } else {
-                                    martingaleStep++;
-                                }
-                            }
-                            // Иначе шаг остаётся без изменений (freeze)
-                        } else {
-                            // stopLossCnt не активен, увеличиваем шаг как обычно
-                            if (martingaleStep >= martingaleMaxSteps) {
-                                martingaleStep = 0;
-                            } else {
-                                martingaleStep++;
-                            }
-                        }
-                    }
-                }
             }
 
             for (let i = 0; i < data.length; i++) {
