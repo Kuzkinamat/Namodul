@@ -14,8 +14,9 @@
     const FLOATING_PANEL_DEFAULTS = Object.freeze({
         ind: { left: 24, top: 98 },
         mm: { left: 24, top: 300 },
-        code: { left: 380, top: 98 }
+        hours: { left: 24, top: 502 }
     });
+    const EDITOR_WINDOW_TYPES = Object.freeze(['ind', 'mm', 'hours', 'code']);
     const FALLBACK_STRATEGIES = [
         { file: 'strategy-(autorun).js', label: 'Autorun' }
     ];
@@ -230,12 +231,21 @@
         return document.getElementById('strategy-mm-editor');
     }
 
+    function getHoursEditor() {
+        return document.getElementById('strategy-hours-editor');
+    }
+
     function getEditorMap() {
         return {
             ind: getIndicatorsEditor(),
             mm: getMoneyManagementEditor(),
+            hours: getHoursEditor(),
             code: getEditor()
         };
+    }
+
+    function getInlineCodePanel() {
+        return document.getElementById('strategy-inline-code-panel');
     }
 
     function getFloatingEditorPanel(type) {
@@ -246,7 +256,7 @@
         return {
             ind: getFloatingEditorPanel('ind'),
             mm: getFloatingEditorPanel('mm'),
-            code: getFloatingEditorPanel('code')
+            hours: getFloatingEditorPanel('hours')
         };
     }
 
@@ -258,8 +268,47 @@
         return document.getElementById('settings-panel');
     }
 
+    function isInlineCodeOpen() {
+        const panel = getInlineCodePanel();
+        return Boolean(panel && panel.classList.contains('open'));
+    }
+
+    function setInlineCodeOpen(isOpen) {
+        const codePanel = getInlineCodePanel();
+        const settingsPanel = getSettingsPanel();
+        if (!codePanel || !settingsPanel) {
+            return;
+        }
+
+        codePanel.classList.toggle('open', isOpen);
+        settingsPanel.classList.toggle('code-editor-open', isOpen);
+        if (!isOpen) {
+            settingsPanel.style.width = '';
+            settingsPanel.style.height = '';
+        }
+        updateEditorToggleButtons();
+        syncSettingsPanelLayout();
+    }
+
+    function openCodeBuilder() {
+        setInlineCodeOpen(true);
+        const editor = getEditor();
+        if (editor) {
+            editor.focus();
+        }
+        log('Builder: заготовка для конструктора кода. Следующим шагом можно добавить шаблоны блоков и условий.');
+    }
+
     function clamp(value, min, max) {
         return Math.min(Math.max(value, min), max);
+    }
+
+    function isInteractiveDragTarget(target) {
+        return Boolean(
+            target
+            && typeof target.closest === 'function'
+            && target.closest('button, input, select, textarea, label, a')
+        );
     }
 
     function getStoredSettingsPanelPosition() {
@@ -480,17 +529,6 @@
         if (!panel || !editor) {
             return;
         }
-
-        if (!editor.dataset.widthInitialized) {
-            editor.style.width = (type === 'code' ? Math.floor(window.innerWidth * 0.4) : 360) + 'px';
-            editor.dataset.widthInitialized = '1';
-        }
-
-        const styles = window.getComputedStyle(panel);
-        const paddingLeft = parseFloat(styles.paddingLeft) || 0;
-        const paddingRight = parseFloat(styles.paddingRight) || 0;
-        const width = Math.ceil(editor.offsetWidth + paddingLeft + paddingRight);
-        panel.style.width = width + 'px';
     }
 
     function applyFloatingPanelPosition(type, left, top, options = {}) {
@@ -560,6 +598,9 @@
                 if (event.button !== 0 && event.pointerType !== 'touch') {
                     return;
                 }
+                if (isInteractiveDragTarget(event.target)) {
+                    return;
+                }
 
                 const startX = event.clientX;
                 const startY = event.clientY;
@@ -618,14 +659,23 @@
     }
 
     function updateEditorToggleButtons() {
-        Object.keys(FLOATING_PANEL_DEFAULTS).forEach(function(type) {
+        EDITOR_WINDOW_TYPES.forEach(function(type) {
             const button = getEditorToggleButton(type);
             if (!button) {
                 return;
             }
 
-            button.classList.toggle('active', isFloatingEditorOpen(type));
+            button.classList.toggle('active', type === 'code' ? isInlineCodeOpen() : isFloatingEditorOpen(type));
         });
+    }
+
+    function setEditorWindowOpen(type, isOpen) {
+        if (type === 'code') {
+            setInlineCodeOpen(isOpen);
+            return;
+        }
+
+        setFloatingEditorOpen(type, isOpen);
     }
 
     function setFloatingEditorOpen(type, isOpen) {
@@ -649,11 +699,16 @@
     }
 
     function toggleStrategyEditorWindow(type) {
+        if (type === 'code') {
+            setInlineCodeOpen(!isInlineCodeOpen());
+            return;
+        }
+
         setFloatingEditorOpen(type, !isFloatingEditorOpen(type));
     }
 
     function focusStrategyEditorWindow(type) {
-        setFloatingEditorOpen(type, true);
+        setEditorWindowOpen(type, true);
     }
 
     function syncSettingsPanelWidth() {
@@ -662,7 +717,12 @@
             return;
         }
 
+        if (isInlineCodeOpen()) {
+            return;
+        }
+
         panel.style.width = '';
+        panel.style.height = '';
     }
 
     function syncSettingsPanelLayout(options = {}) {
@@ -683,18 +743,183 @@
         return selected ? selected.file : null;
     }
 
-    function getStrategyPartFiles(fileName) {
-        const baseName = String(fileName || '').replace(/\.js$/i, '');
+    function extractDefinitionSection(source, sectionName) {
+        const marker = 'const ' + sectionName + ' = Object.freeze({';
+        const start = source.indexOf(marker);
+        if (start === -1) {
+            throw new Error('Не найден блок ' + sectionName);
+        }
+
+        const openBraceIndex = source.indexOf('{', start);
+        if (openBraceIndex === -1) {
+            throw new Error('Не найдено начало объекта ' + sectionName);
+        }
+
+        let depth = 0;
+        for (let index = openBraceIndex; index < source.length; index++) {
+            const char = source[index];
+            if (char === '{') {
+                depth += 1;
+            } else if (char === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                    return source.slice(openBraceIndex, index + 1);
+                }
+            }
+        }
+
+        throw new Error('Не удалось разобрать объект ' + sectionName);
+    }
+
+    function extractTemplateLiteral(source, constName) {
+        const marker = 'const ' + constName + ' = `';
+        const start = source.indexOf(marker);
+        if (start === -1) {
+            throw new Error('Не найден блок ' + constName);
+        }
+
+        const contentStart = start + marker.length;
+        const contentEnd = source.indexOf('`;', contentStart);
+        if (contentEnd === -1) {
+            throw new Error('Не удалось разобрать шаблон ' + constName);
+        }
+
+        return source.slice(contentStart, contentEnd);
+    }
+
+    function parseUnifiedStrategySource(source) {
         return {
-            main: fileName,
-            ind: baseName + '-ind.js',
-            mm: baseName + '-mm.js',
-            code: baseName + '-code.js'
+            ind: extractDefinitionSection(source, 'indicatorSettings'),
+            mm: extractDefinitionSection(source, 'moneyManagementSettings'),
+            hours: extractDefinitionSection(source, 'hoursSettings'),
+            code: extractTemplateLiteral(source, 'logicSource')
         };
+    }
+
+    function escapeTemplateLiteralContent(value) {
+        return String(value || '')
+            .replace(/\\/g, '\\\\')
+            .replace(/`/g, '\\`')
+            .replace(/\$\{/g, '\\${');
+    }
+
+    function buildUnifiedStrategySource(parts) {
+        const indicatorSettings = String(parts && parts.ind ? parts.ind : '').trim();
+        const moneyManagementSettings = String(parts && parts.mm ? parts.mm : '').trim();
+        const hoursSettings = String(parts && parts.hours ? parts.hours : '').trim();
+        const logicSource = String(parts && parts.code ? parts.code : '').replace(/\r\n/g, '\n').trim();
+
+        if (!indicatorSettings || !moneyManagementSettings || !hoursSettings || !logicSource) {
+            throw new Error('Недостаточно данных для сборки strategy definition');
+        }
+
+        const escapedLogicSource = escapeTemplateLiteralContent(logicSource);
+
+        return [
+            '// strategy-(autorun).js',
+            '// Unified strategy definition for the Autorun strategy.',
+            '',
+            'window.StrategyDefinition = (function() {',
+            "    'use strict';",
+            '',
+            '    function buildLogicEvaluator(source) {',
+            "        const logicBody = String(source || '').trim();",
+            '        if (!logicBody) {',
+            '            return function() {',
+            '                return { buy: 0, sell: 0 };',
+            '            };',
+            '        }',
+            '',
+            "        const evaluator = new Function('ctx', `let buy = 0, sell = 0;\\n${logicBody}\\nreturn { buy, sell };`);",
+            '        return function(ctx) {',
+            '            const result = evaluator(ctx);',
+            "            if (!result || typeof result !== 'object') {",
+            '                return { buy: 0, sell: 0 };',
+            '            }',
+            '',
+            '            return {',
+            '                buy: Number.isFinite(result.buy) ? result.buy : 0,',
+            '                sell: Number.isFinite(result.sell) ? result.sell : 0',
+            '            };',
+            '        };',
+            '    }',
+            '',
+            '    const indicatorSettings = Object.freeze(' + indicatorSettings + ');',
+            '',
+            '    const moneyManagementSettings = Object.freeze(' + moneyManagementSettings + ');',
+            '',
+            '    const hoursSettings = Object.freeze(' + hoursSettings + ');',
+            '',
+            '    const logicSource = `',
+            escapedLogicSource,
+            '`;',
+            '',
+            '    const evaluateLogic = buildLogicEvaluator(logicSource);',
+            '',
+            '    const DEFAULT_PARAMS = Object.freeze({',
+            '        ...moneyManagementSettings,',
+            '        ...hoursSettings,',
+            '        ...indicatorSettings',
+            '    });',
+            '',
+            '    function getDefaultParams() {',
+            '        return { ...DEFAULT_PARAMS };',
+            '    }',
+            '',
+            '    function normalizeParams(params) {',
+            '        return { ...DEFAULT_PARAMS, ...(params || {}) };',
+            '    }',
+            '',
+            '    return {',
+            '        meta: Object.freeze({',
+            "            id: 'autorun',",
+            "            label: 'Autorun'",
+            '        }),',
+            '        settings: Object.freeze({',
+            '            indicators: indicatorSettings,',
+            '            moneyManagement: moneyManagementSettings,',
+            '            hours: hoursSettings',
+            '        }),',
+            '        logic: Object.freeze({',
+            '            source: logicSource,',
+            '            evaluate: evaluateLogic',
+            '        }),',
+            '        DEFAULT_PARAMS,',
+            '        getDefaultParams,',
+            '        normalizeParams',
+            '    };',
+            '})();',
+            '',
+            'window.StrategyParams = (function(definition) {',
+            "    'use strict';",
+            '',
+            "    const defaultParams = definition && typeof definition.getDefaultParams === 'function'",
+            '        ? Object.freeze(definition.getDefaultParams())',
+            '        : Object.freeze({});',
+            '',
+            '    function getDefaultParams() {',
+            '        return { ...defaultParams };',
+            '    }',
+            '',
+            '    function normalizeParams(params) {',
+            '        return { ...defaultParams, ...(params || {}) };',
+            '    }',
+            '',
+            '    return {',
+            '        DEFAULT_PARAMS: defaultParams,',
+            '        getDefaultParams,',
+            '        normalizeParams',
+            '    };',
+            '})(window.StrategyDefinition);',
+            ''
+        ].join('\n');
     }
 
     function validateAppliedFile(fileName) {
         return STRATEGY_FILE_PATTERN.test(fileName || '')
+            && window.StrategyDefinition
+            && window.StrategyDefinition.logic
+            && typeof window.StrategyDefinition.logic.evaluate === 'function'
             && window.StrategyParams
             && typeof window.StrategyParams.getDefaultParams === 'function';
     }
@@ -714,7 +939,7 @@
 
     async function loadStrategyCode(options = {}) {
         const editors = getEditorMap();
-        if (!editors.ind || !editors.mm || !editors.code) {
+        if (!editors.ind || !editors.mm || !editors.hours || !editors.code) {
             log('Ошибка: текстовые поля редактора не найдены');
             return null;
         }
@@ -727,24 +952,21 @@
 
         window.__activeStrategyFile = fileName;
         storeSelectedStrategyFile(fileName);
-        const partFiles = getStrategyPartFiles(fileName);
 
         try {
-            const [indText, mmText, codeText, mainText] = await Promise.all([
-                fetchTextFile(partFiles.ind, options),
-                fetchTextFile(partFiles.mm, options),
-                fetchTextFile(partFiles.code, options),
-                fetchTextFile(partFiles.main, options)
-            ]);
+            const mainText = await fetchTextFile(fileName, options);
+            const parsed = parseUnifiedStrategySource(mainText);
 
-            editors.ind.value = indText;
-            editors.mm.value = mmText;
-            editors.code.value = codeText;
+            editors.ind.value = parsed.ind;
+            editors.mm.value = parsed.mm;
+            editors.hours.value = parsed.hours;
+            editors.code.value = parsed.code;
             window.__strategyCoreSource = mainText;
             return {
-                ind: indText,
-                mm: mmText,
-                code: codeText,
+                ind: parsed.ind,
+                mm: parsed.mm,
+                hours: parsed.hours,
+                code: parsed.code,
                 main: mainText
             };
         } catch (err) {
@@ -773,15 +995,16 @@
 
     function applyStrategyCode(options = {}) {
         const editors = getEditorMap();
-        if (!editors.ind || !editors.mm || !editors.code) {
+        if (!editors.ind || !editors.mm || !editors.hours || !editors.code) {
             log('Ошибка: текстовые поля редактора не найдены');
             return false;
         }
 
         const indCode = editors.ind.value.trim();
         const mmCode = editors.mm.value.trim();
+        const hoursCode = editors.hours.value.trim();
         const strategyCode = editors.code.value.trim();
-        if (!indCode || !mmCode || !strategyCode) {
+        if (!indCode || !mmCode || !hoursCode || !strategyCode) {
             log('Один из редакторов пуст');
             return false;
         }
@@ -792,28 +1015,25 @@
             return false;
         }
 
+        const previousDefinition = window.StrategyDefinition;
         const previousDefaults = window.StrategyParams;
-        const previousInd = window.StrategyAutorunInd;
-        const previousMM = window.StrategyAutorunMM;
-        const previousCode = window.StrategyAutorunCode;
-        const partFiles = getStrategyPartFiles(fileName);
 
         try {
-            new Function(indCode)();
-            new Function(mmCode)();
-            new Function(strategyCode)();
+            const mainCode = buildUnifiedStrategySource({
+                ind: indCode,
+                mm: mmCode,
+                hours: hoursCode,
+                code: strategyCode
+            });
 
-            const mainSource = window.__strategyCoreSource || '';
-            const shouldReloadMain = !mainSource || options.forceReload === true;
-
-            const finalize = function(mainCode) {
-                new Function(mainCode)();
+            const finalize = function(compiledMainCode) {
+                new Function(compiledMainCode)();
 
                 if (!validateAppliedFile(fileName)) {
                     throw new Error('Код не прошел проверку для файла ' + fileName);
                 }
 
-                window.__strategyCoreSource = mainCode;
+                window.__strategyCoreSource = compiledMainCode;
                 window.__activeStrategyFile = fileName;
                 storeSelectedStrategyFile(fileName);
                 log('Код успешно применён: ' + fileName);
@@ -827,27 +1047,10 @@
                 return true;
             };
 
-            if (shouldReloadMain) {
-                return fetchTextFile(partFiles.main, { forceReload: true })
-                    .then(function(mainCode) {
-                        return finalize(mainCode);
-                    })
-                    .catch(function(err) {
-                        window.StrategyParams = previousDefaults;
-                        window.StrategyAutorunInd = previousInd;
-                        window.StrategyAutorunMM = previousMM;
-                        window.StrategyAutorunCode = previousCode;
-                        log('Ошибка выполнения кода: ' + err.message);
-                        return false;
-                    });
-            }
-
-            return finalize(mainSource);
+            return finalize(mainCode);
         } catch (err) {
+            window.StrategyDefinition = previousDefinition;
             window.StrategyParams = previousDefaults;
-            window.StrategyAutorunInd = previousInd;
-            window.StrategyAutorunMM = previousMM;
-            window.StrategyAutorunCode = previousCode;
             log('Ошибка выполнения кода: ' + err.message);
         }
 
@@ -884,7 +1087,7 @@
 
     function resetStrategyCode() {
         const editors = getEditorMap();
-        if (!editors.ind || !editors.mm || !editors.code) {
+        if (!editors.ind || !editors.mm || !editors.hours || !editors.code) {
             log('Ошибка: текстовые поля редактора не найдены');
             return;
         }
@@ -923,6 +1126,7 @@
     window.applyAllSettings = applyAllSettings;
     window.focusStrategyEditorWindow = focusStrategyEditorWindow;
     window.toggleStrategyEditorWindow = toggleStrategyEditorWindow;
+    window.openCodeBuilder = openCodeBuilder;
 
     document.addEventListener('DOMContentLoaded', async function() {
         try {
@@ -1000,6 +1204,7 @@
                         Object.keys(FLOATING_PANEL_DEFAULTS).forEach(function(type) {
                             setFloatingEditorOpen(type, false);
                         });
+                        setInlineCodeOpen(false);
                     }
                 });
             });

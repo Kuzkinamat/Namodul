@@ -1,8 +1,79 @@
 // strategy-core-signals.js
-// Signal generation using user-defined rules evaluated per candle.
+// Signal generation using StrategyDefinition logic evaluated per candle.
 
 window.StrategyCoreSignals = (function() {
     'use strict';
+
+    function resolveStrategyLogicEvaluator() {
+        const definition = window.StrategyDefinition;
+        const logic = definition && definition.logic;
+        return logic && typeof logic.evaluate === 'function' ? logic.evaluate : null;
+    }
+
+    function createRuntimeContext(context) {
+        const current = typeof context.c === 'function' ? context.c(0) : null;
+        const previous = typeof context.c === 'function' ? context.c(-1) : null;
+
+        function createIndicatorAccessor(name) {
+            return {
+                current: typeof context.ind === 'function' ? context.ind(name, 0) : null,
+                prev: typeof context.ind === 'function' ? context.ind(name, -1) : null,
+                at: function(lag) {
+                    return typeof context.ind === 'function' ? context.ind(name, Number(lag) || 0) : null;
+                }
+            };
+        }
+
+        return {
+            candle: {
+                current,
+                prev: previous,
+                at: function(lag) {
+                    return typeof context.c === 'function' ? context.c(Number(lag) || 0) : null;
+                }
+            },
+            time: current ? {
+                isTrading: current.isTradingHour !== false,
+                isWeekend: Boolean(current.isWeekend),
+                dayOfWeek: Number.isFinite(current.dayOfWeek) ? current.dayOfWeek : null,
+                hourUtc: Number.isFinite(current.hourUtc) ? current.hourUtc : null,
+                minuteUtc: Number.isFinite(current.minuteUtc) ? current.minuteUtc : null,
+                session: current.sessionKey || 'closed',
+                sessionLabel: current.sessionLabel || 'Closed',
+                tradingTimeSettings: current.tradingTimeSettings || null
+            } : {
+                isTrading: false,
+                isWeekend: false,
+                dayOfWeek: null,
+                hourUtc: null,
+                minuteUtc: null,
+                session: 'closed',
+                sessionLabel: 'Closed',
+                tradingTimeSettings: null
+            },
+            indicators: {
+                bb: createIndicatorAccessor('bb'),
+                stochastic: createIndicatorAccessor('stochastic'),
+                atr: createIndicatorAccessor('atr'),
+                macd: createIndicatorAccessor('macd'),
+                sma: createIndicatorAccessor('sma')
+            },
+            trades: {
+                stats: typeof context.dealStats === 'function' ? context.dealStats : function() {
+                    return { winCount: 0, lossCount: 0, totalProfit: 0, winRate: 0 };
+                },
+                lastLossWithinTf: typeof context.lastLossWithinTf === 'function' ? context.lastLossWithinTf : function() { return false; },
+                lossCountWithinPeriods: typeof context.lossCountWithinPeriods === 'function' ? context.lossCountWithinPeriods : function() { return 0; }
+            },
+            legacy: {
+                c: context.c,
+                ind: context.ind,
+                dealStats: context.dealStats,
+                lastLossWithinTf: context.lastLossWithinTf,
+                lossCountWithinPeriods: context.lossCountWithinPeriods
+            }
+        };
+    }
 
     function createTimeIndexMap(data) {
         const timeIndexMap = new Map();
@@ -63,7 +134,8 @@ window.StrategyCoreSignals = (function() {
         const defaults = window.StrategyParams;
         const indicatorModule = window.StrategyCoreIndicators;
         const contextModule = window.StrategyCoreContext;
-        if (!defaults || !indicatorModule || !contextModule) {
+        const evaluateLogic = resolveStrategyLogicEvaluator();
+        if (!defaults || !indicatorModule || !contextModule || !evaluateLogic) {
             return [];
         }
 
@@ -120,7 +192,18 @@ window.StrategyCoreSignals = (function() {
 
             const mergedTradeHistory = (tradeHistory || []).concat(closedTradeHistory);
             const context = contextModule.createConditionContext(i, data, resolvedIndicators, mergedTradeHistory, resolvedParams);
-            const { buy, sell } = contextModule.evaluateRules(resolvedParams.rules, context);
+            const runtimeContext = createRuntimeContext(context);
+
+            let result;
+            try {
+                result = evaluateLogic(runtimeContext);
+            } catch (err) {
+                contextModule.log('Ошибка в logic.evaluate: ' + err.message);
+                return signals;
+            }
+
+            const buy = result && Number.isFinite(result.buy) ? result.buy : 0;
+            const sell = result && Number.isFinite(result.sell) ? result.sell : 0;
 
             if (buy >= 1) {
                 signals.push({

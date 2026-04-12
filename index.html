@@ -2,9 +2,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>namoduL 0.2.4</title>
+    <title>namoduL 0.2.5</title>
     <meta charset="UTF-8">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260413g">
 
 </head>
 <body>
@@ -75,12 +75,18 @@
                     <select id="strategy-file-select" class="strategy-select"></select>
                 </label>
                 <button class="nav-btn strategy-btn" onclick="resetStrategyCode()">Reset</button>
-                <button class="nav-btn strategy-btn" onclick="applyStrategyCode()">Apply</button>
             </div>
             <div class="strategy-editor-launchers">
                 <button class="nav-btn strategy-btn" type="button" data-editor-toggle="ind" onclick="toggleStrategyEditorWindow('ind')">Indicators</button>
-                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="mm" onclick="toggleStrategyEditorWindow('mm')">MM / Hours</button>
+                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="mm" onclick="toggleStrategyEditorWindow('mm')">MM</button>
+                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="hours" onclick="toggleStrategyEditorWindow('hours')">Hours</button>
                 <button class="nav-btn strategy-btn" type="button" data-editor-toggle="code" onclick="toggleStrategyEditorWindow('code')">Code</button>
+                <button class="nav-btn strategy-btn" type="button" id="code-builder-btn" onclick="openCodeBuilder()">Builder</button>
+                <span class="strategy-launcher-spacer"></span>
+                <button class="nav-btn strategy-btn" onclick="applyStrategyCode()">Apply</button>
+            </div>
+            <div id="strategy-inline-code-panel" class="strategy-inline-code-panel">
+                <textarea class="code-editor code-editor-main strategy-inline-code-editor" id="strategy-code-editor" placeholder="// Strategy logic (ctx)"></textarea>
             </div>
         </div>
     </div>
@@ -88,29 +94,44 @@
     <div id="strategy-editor-ind-panel" class="floating-editor-panel">
         <div class="floating-editor-header" data-editor-drag-handle="ind">
             <span class="floating-editor-title">Indicators</span>
+            <div class="floating-editor-actions">
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); applyStrategyCode()">Apply</button>
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); toggleStrategyEditorWindow('ind')">Close</button>
+            </div>
         </div>
         <textarea class="code-editor code-editor-split" id="strategy-ind-editor" placeholder="// Indicator settings"></textarea>
     </div>
 
     <div id="strategy-editor-mm-panel" class="floating-editor-panel">
         <div class="floating-editor-header" data-editor-drag-handle="mm">
-            <span class="floating-editor-title">MM / Hours</span>
+            <span class="floating-editor-title">MM</span>
+            <div class="floating-editor-actions">
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); applyStrategyCode()">Apply</button>
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); toggleStrategyEditorWindow('mm')">Close</button>
+            </div>
         </div>
-        <textarea class="code-editor code-editor-split" id="strategy-mm-editor" placeholder="// Money management and trading hours"></textarea>
+        <textarea class="code-editor code-editor-split" id="strategy-mm-editor" placeholder="// Money management settings"></textarea>
     </div>
 
-    <div id="strategy-editor-code-panel" class="floating-editor-panel">
-        <div class="floating-editor-header" data-editor-drag-handle="code">
-            <span class="floating-editor-title">Code</span>
+    <div id="strategy-editor-hours-panel" class="floating-editor-panel">
+        <div class="floating-editor-header" data-editor-drag-handle="hours">
+            <span class="floating-editor-title">Hours</span>
+            <div class="floating-editor-actions">
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); applyStrategyCode()">Apply</button>
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); toggleStrategyEditorWindow('hours')">Close</button>
+            </div>
         </div>
-        <textarea class="code-editor code-editor-main" id="strategy-code-editor" placeholder="// Strategy rules"></textarea>
+        <textarea class="code-editor code-editor-split" id="strategy-hours-editor" placeholder="// Trading hours settings"></textarea>
     </div>
 
     <div id="panels-container">
         <div id="main-pane" class="pane-wrapper">
             <div class="v-line"></div>
             <div id="chart-main" class="chart-container"></div>
-            <div id="main-session-background"></div>
+            <div id="main-session-background">
+                <div id="main-session-track"></div>
+                <div id="main-session-scale"></div>
+            </div>
         </div>
     </div>
 
@@ -128,18 +149,16 @@
     <script src="./ind_renderer.js"></script>
     <script src="./prov-twelvedata.js"></script>
     <script src="./prov-local.js?v=20260320b"></script>
-    <script src="./strategy-(autorun)-ind.js"></script>
-    <script src="./strategy-(autorun)-mm.js"></script>
-    <script src="./strategy-(autorun)-code.js"></script>
+    <script src="./strategy-(autorun).js?v=20260412b"></script>
     <script>
         window.STRATEGY_FILES = [
             { file: 'strategy-(autorun).js', label: 'Autorun' }
         ];
     </script>
-    <script src="./main.js"></script>
+    <script src="./main.js?v=20260413c"></script>
     <script src="./strategy-core-context.js"></script>
     <script src="./strategy-core-indicators.js"></script>
     <script src="./strategy-core-signals.js"></script>
     <script src="./strategy-core.js"></script>
     <script src="./strategy.js"></script>
-    <script src="./strategy-editor.js"></script>
+    <script src="./strategy-editor.js?v=20260413d"></script>

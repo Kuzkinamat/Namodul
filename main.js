@@ -83,7 +83,14 @@ window.candleSeries = candleSeries;
 const mainPane = document.getElementById('main-pane');
 const chartMainContainer = document.getElementById('chart-main');
 const mainSessionBackground = document.getElementById('main-session-background');
-const WORKTIME_STRIP_HEIGHT = 8;
+const mainSessionTrack = document.getElementById('main-session-track');
+const mainSessionScale = document.getElementById('main-session-scale');
+
+function getWorktimeStripHeight() {
+    const raw = window.getComputedStyle(document.documentElement).getPropertyValue('--worktime-strip-height');
+    const parsed = parseFloat(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 28;
+}
 
 const SESSION_BACKGROUND_COLORS = Object.freeze({
     closed: '#c94b4b',
@@ -96,19 +103,25 @@ let mainSessionBackgroundFrame = null;
 let isWorktimeOverlayEnabled = false;
 
 function getMainBackgroundContext() {
-    if (!mainSessionBackground) {
+    if (!mainSessionBackground || !mainSessionTrack) {
         return null;
     }
 
     const width = mainPane ? mainPane.clientWidth : 0;
-    const height = WORKTIME_STRIP_HEIGHT;
-    if (!width || !height) {
+    const height = getWorktimeStripHeight();
+    const scaleWidth = Math.max(0, Math.min(SCALE_WIDTH, width));
+    const trackWidth = Math.max(0, width - scaleWidth);
+    if (!width || !height || !trackWidth) {
         return null;
     }
 
     mainSessionBackground.style.width = width + 'px';
     mainSessionBackground.style.height = height + 'px';
-    return { width, height };
+    if (mainSessionScale) {
+        mainSessionScale.style.width = scaleWidth + 'px';
+        mainSessionScale.style.flexBasis = scaleWidth + 'px';
+    }
+    return { width, height, trackWidth };
 }
 
 function getSessionKey(candle) {
@@ -131,38 +144,38 @@ function drawMainSessionBackground() {
         return;
     }
 
-    const { width } = surface;
+    const { trackWidth } = surface;
     if (!isWorktimeOverlayEnabled) {
-        mainSessionBackground.replaceChildren();
+        mainSessionTrack.replaceChildren();
         mainSessionBackground.style.display = 'none';
         return;
     }
 
-    mainSessionBackground.style.display = 'block';
+    mainSessionBackground.style.display = 'flex';
 
     if (!Array.isArray(data) || data.length === 0) {
-        mainSessionBackground.replaceChildren();
+        mainSessionTrack.replaceChildren();
         return;
     }
 
     const ts = chartMain.timeScale();
     const visibleRange = ts.getVisibleLogicalRange();
     if (!visibleRange) {
-        mainSessionBackground.replaceChildren();
+        mainSessionTrack.replaceChildren();
         return;
     }
 
     const visibleFrom = Math.max(0, visibleRange.from);
     const visibleTo = Math.min(data.length - 1, visibleRange.to);
     if (!Number.isFinite(visibleFrom) || !Number.isFinite(visibleTo) || visibleFrom >= visibleTo) {
-        mainSessionBackground.replaceChildren();
+        mainSessionTrack.replaceChildren();
         return;
     }
 
     const from = Math.max(0, Math.floor(visibleFrom));
     const to = Math.min(data.length - 1, Math.ceil(visibleTo));
     if (from > to) {
-        mainSessionBackground.replaceChildren();
+        mainSessionTrack.replaceChildren();
         return;
     }
 
@@ -200,7 +213,7 @@ function drawMainSessionBackground() {
         }
     }
     flushSegment(to + 1);
-    mainSessionBackground.replaceChildren(fragment);
+    mainSessionTrack.replaceChildren(fragment);
 }
 
 function scheduleMainSessionBackgroundDraw() {
@@ -216,10 +229,21 @@ function scheduleMainSessionBackgroundDraw() {
 window.updateMainSessionBackground = scheduleMainSessionBackgroundDraw;
 window.setWorktimeOverlayVisible = function(isVisible) {
     isWorktimeOverlayEnabled = isVisible === true;
-    if (!isWorktimeOverlayEnabled) {
-        mainSessionBackground.replaceChildren();
+    if (isWorktimeOverlayEnabled) {
+        mainSessionBackground.style.display = 'flex';
+    } else {
+        if (mainSessionTrack) {
+            mainSessionTrack.replaceChildren();
+        }
         mainSessionBackground.style.display = 'none';
     }
+
+    window.requestAnimationFrame(() => {
+        if (typeof window.onresize === 'function') {
+            window.onresize();
+        }
+    });
+
     scheduleMainSessionBackgroundDraw();
 };
 
