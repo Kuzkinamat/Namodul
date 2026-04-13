@@ -22,6 +22,8 @@
         'bbPeriod',
         'bbStdDev',
         'useATR',
+        'atrFastPeriod',
+        'atrSlowPeriod',
         'atrPeriod',
         'atrSmoothPeriod',
         'useStochastic',

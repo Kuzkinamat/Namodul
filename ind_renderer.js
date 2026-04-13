@@ -155,34 +155,61 @@ window.IndicatorRenderers = (function() {
         });
 
         const useAtrSettings = !!(params && params.useATR);
-        const atrData = useAtrSettings
-            ? window.calcATR(
-                data,
-                Math.max(2, Number(params.atrPeriod)),
-                Math.max(1, Number(params.atrSmoothPeriod))
-            )
-            : window.calcATR(data);
-        if (!Array.isArray(atrData) || atrData.length !== data.length) {
+        const fastPeriod = useAtrSettings
+            ? Math.max(2, Number(params.atrFastPeriod || params.atrPeriod || 14))
+            : 14;
+        const slowPeriod = useAtrSettings
+            ? Math.max(2, Number(params.atrSlowPeriod || params.atrSmoothPeriod || 28))
+            : 28;
+
+        const atrFastData = window.calcATR(data, fastPeriod, 1);
+        const atrSlowData = window.calcATR(data, slowPeriod, 1);
+        if (!Array.isArray(atrFastData) || atrFastData.length !== data.length || !Array.isArray(atrSlowData) || atrSlowData.length !== data.length) {
             if (addLog) addLog('ATR: invalid indicator data');
             return;
         }
 
         // Always display ATR as percentage: ATR / Close * 100.
-        const atrView = atrData.map((v, i) => {
+        const atrFastView = atrFastData.map((v, i) => {
+            const close = data[i] && Number.isFinite(data[i].close) ? data[i].close : null;
+            return Number.isFinite(v) && Number.isFinite(close) && close > 0 ? (v / close) * 100 : null;
+        });
+        const atrSlowView = atrSlowData.map((v, i) => {
             const close = data[i] && Number.isFinite(data[i].close) ? data[i].close : null;
             return Number.isFinite(v) && Number.isFinite(close) && close > 0 ? (v / close) * 100 : null;
         });
 
-        const finiteAtr = atrView.filter(v => Number.isFinite(v));
-        const maxAtr = finiteAtr.length ? Math.max(...finiteAtr) : 0;
+        let maxAtr = 0;
+        for (let index = 0; index < data.length; index++) {
+            const fastValue = atrFastView[index];
+            const slowValue = atrSlowView[index];
+            if (Number.isFinite(fastValue) && fastValue > maxAtr) {
+                maxAtr = fastValue;
+            }
+            if (Number.isFinite(slowValue) && slowValue > maxAtr) {
+                maxAtr = slowValue;
+            }
+        }
         let precision = 2;
         if (maxAtr < 0.001) precision = 4;
         else if (maxAtr < 0.01) precision = 3;
         else if (maxAtr < 0.1) precision = 3;
         const minMove = Math.pow(10, -precision);
 
-        // Render ATR as a line in a separate pane, similar to oscillators.
-        const line = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        const fastLine = pane.chart.addSeries(LightweightCharts.LineSeries, {
+            color: '#ffb347',
+            lineWidth: 2,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            priceFormat: {
+                type: 'price',
+                precision,
+                minMove
+            }
+        });
+        fastLine.setData(data.map((c, i) => ({ time: c.time, value: atrFastView[i] })));
+
+        const slowLine = pane.chart.addSeries(LightweightCharts.LineSeries, {
             color: '#8ec5ff',
             lineWidth: 2,
             lastValueVisible: false,
@@ -193,8 +220,8 @@ window.IndicatorRenderers = (function() {
                 minMove
             }
         });
-        line.setData(data.map((c, i) => ({ time: c.time, value: atrView[i] })));
-        pane.series.push(line);
+        slowLine.setData(data.map((c, i) => ({ time: c.time, value: atrSlowView[i] })));
+        pane.series.push(fastLine, slowLine);
     }
 
     function toggleIndicator(ctx) {

@@ -130,19 +130,30 @@ window.StrategyCoreIndicators = (function() {
                 return null;
             }
 
-            const atr = window.calcATR(
+            const atrFast = window.calcATR(
                 data,
-                Math.max(2, Number(resolvedParams.atrPeriod || 14)),
-                Math.max(1, Number(resolvedParams.atrSmoothPeriod || 8))
+                Math.max(2, Number(resolvedParams.atrFastPeriod || resolvedParams.atrPeriod || 14)),
+                1
             );
-            if (!Array.isArray(atr) || atr.length !== data.length) {
+            const atrSlow = window.calcATR(
+                data,
+                Math.max(2, Number(resolvedParams.atrSlowPeriod || resolvedParams.atrSmoothPeriod || 28)),
+                1
+            );
+            if (!Array.isArray(atrFast) || atrFast.length !== data.length || !Array.isArray(atrSlow) || atrSlow.length !== data.length) {
                 if (!(options && options.silent)) {
-                    const len = Array.isArray(atr) ? atr.length : 0;
-                    context.log(`Ошибка: длина ATR (${len}) не совпадает с данными (${data.length})`);
+                    const fastLen = Array.isArray(atrFast) ? atrFast.length : 0;
+                    const slowLen = Array.isArray(atrSlow) ? atrSlow.length : 0;
+                    context.log(`Ошибка: длина ATR fast/slow (${fastLen}/${slowLen}) не совпадает с данными (${data.length})`);
                 }
                 return null;
             }
-            indicators.atr = atr;
+            indicators.atr = data.map(function(_, index) {
+                return {
+                    fast: atrFast[index],
+                    slow: atrSlow[index]
+                };
+            });
         }
 
         return indicators;

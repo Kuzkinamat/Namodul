@@ -28,15 +28,20 @@ window.StrategyDefinition = (function() {
 
     const indicatorSettings = Object.freeze({
         useWorktime: true,
+        
         useBB: true,
         bbPeriod: 20,
         bbStdDev: 2,
 
         useMACD: false,
-        useATR: false,
+
+        useATR: true,
+        atrFastPeriod: 12,
+        atrSlowPeriod: 120,
+        
         useStochastic: true,
-        stochasticK: 14,
-        stochasticD: 3,
+        stochasticK: 120,
+        stochasticD: 12,
         stochasticSlowing: 3
     });
 
@@ -117,7 +122,19 @@ if (
     }
 
     function normalizeParams(params) {
-        return { ...DEFAULT_PARAMS, ...(params || {}) };
+        const merged = { ...DEFAULT_PARAMS, ...(params || {}) };
+
+        if (!Number.isFinite(Number(merged.atrFastPeriod)) && Number.isFinite(Number(merged.atrPeriod))) {
+            merged.atrFastPeriod = Number(merged.atrPeriod);
+        }
+        if (!Number.isFinite(Number(merged.atrSlowPeriod)) && Number.isFinite(Number(merged.atrSmoothPeriod))) {
+            merged.atrSlowPeriod = Number(merged.atrSmoothPeriod);
+        }
+
+        merged.atrFastPeriod = Math.max(2, Number(merged.atrFastPeriod || DEFAULT_PARAMS.atrFastPeriod));
+        merged.atrSlowPeriod = Math.max(2, Number(merged.atrSlowPeriod || DEFAULT_PARAMS.atrSlowPeriod));
+
+        return merged;
     }
 
     return {
