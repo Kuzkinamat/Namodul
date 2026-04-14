@@ -46,6 +46,9 @@ window.StrategyCore = (function() {
         calculateSignals: function(candles, params, indicators, history) {
             return call('StrategyCoreSignals', 'calculateSignals', [], [candles, params, indicators, history]);
         },
+        calculateSignalPaneData: function(candles, params, indicators) {
+            return call('StrategyCoreSignals', 'calculateSignalPaneData', [], [candles, params, indicators]);
+        },
         isTradingHour: function(timestamp, params) {
             return call('StrategyCoreContext', 'isTradingHour', false, [timestamp, params]);
         },

@@ -21,6 +21,10 @@
     const INDICATOR_SETTING_KEYS = [
         'bbPeriod',
         'bbStdDev',
+        'useMACD',
+        'macdFast',
+        'macdSlow',
+        'macdSignal',
         'useATR',
         'atrFastPeriod',
         'atrSlowPeriod',
@@ -498,6 +502,19 @@
 
                 if (window.chartMain && window.candleSeries) {
                     this.plotSignals(window.chartMain, window.candleSeries, signals);
+                }
+
+                // Render indicator signals panel using strategy's signals evaluator
+                if (typeof window.renderSignalsPane === 'function') {
+                    try {
+                        const core = window.StrategyCore;
+                        const signalPaneData = core && typeof core.calculateSignalPaneData === 'function'
+                            ? core.calculateSignalPaneData(window.data, this.params, null)
+                            : [];
+                        window.renderSignalsPane(window.data, signalPaneData);
+                    } catch (error) {
+                        log(`Error rendering signals pane: ${error.message}`);
+                    }
                 }
 
                 if (typeof window.updateBalance === 'function') {

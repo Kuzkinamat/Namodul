@@ -302,6 +302,131 @@ function ensureBalancePane() {
     return activePanes.Balance;
 }
 
+function ensureSignalsPane() {
+    if (activePanes.Signals) {
+        return activePanes.Signals;
+    }
+
+    const wr = document.createElement('div');
+    wr.id = 'wrapper-Signals';
+    wr.className = 'pane-wrapper sub-pane';
+    const signalPaneHeight = 100;
+    wr.style.height = signalPaneHeight + 'px';
+    wr.innerHTML = `<div class="v-line"></div><div id="chart-label-Signals" class="pane-label"></div><div id="chart-Signals" class="chart-container"></div>`;
+    
+    // Insert signals pane right after main-pane
+    const mainPane = document.getElementById('main-pane');
+    const panelsContainer = document.getElementById('panels-container');
+    if (mainPane && panelsContainer) {
+        mainPane.parentNode.insertBefore(wr, mainPane.nextSibling);
+    } else {
+        panelsContainer.appendChild(wr);
+    }
+
+    const chart = LightweightCharts.createChart(document.getElementById('chart-Signals'), {
+        layout: { background: { color: '#131722' }, textColor: '#d1d4dc' },
+        rightPriceScale: { borderColor: '#363c4e', minimumWidth: 80, autoScale: true },
+        grid: { vertLines: { visible: false }, horzLines: { color: '#242733' } },
+        crosshair: { mode: LightweightCharts.CrosshairMode.Hidden },
+        timeScale: { visible: false }
+    });
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => syncAll(chart));
+    activePanes.Signals = { chart, series: [] };
+    return activePanes.Signals;
+}
+
+function renderSignalsPane(data, signalPaneData) {
+    const pane = ensureSignalsPane();
+
+    // Clear existing series
+    pane.series.forEach(series => pane.chart.removeSeries(series));
+    pane.series = [];
+
+    if (!data || !signalPaneData || !signalPaneData.length) {
+        return;
+    }
+
+    const bbColor     = 'rgba(38,166,154,0.9)';      // BB-границы флета — teal
+    const macdColor   = '#2196f3';                    // MACD — синий
+    const signalColor = 'rgba(200,200,200,0.85)';     // результирующий — светло-серый
+    const trendColor  = 'rgba(255,152,0,0.85)';       // SMA тренд — оранжевый
+
+    // BB верхняя граница флета (+value, тeal пунктир)
+    const topBand = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: bbColor,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
+    });
+    // value=1 во флете → рисуем на ±0.5 (масштабируем *0.5)
+    topBand.setData(signalPaneData.map(p => ({ time: p.time, value: p.value * 0.5 })));
+    pane.series.push(topBand);
+
+    // BB нижняя граница флета (-value*0.5, зеркальная)
+    const botBand = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: bbColor,
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
+    });
+    botBand.setData(signalPaneData.map(p => ({ time: p.time, value: -p.value * 0.5 })));
+    pane.series.push(botBand);
+
+    // MACD нормализованный (синий)
+    const macdSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: macdColor,
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
+    });
+    macdSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.value2 === 'number' ? p.value2 : 0 })));
+    pane.series.push(macdSeries);
+
+    // Тренд SMA200 (оранжевый)
+    const trendSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: trendColor,
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
+    });
+    trendSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.sma === 'number' ? p.sma * 0.5 : 0 })));
+    pane.series.push(trendSeries);
+
+    // Результирующий Signal (светло-серый)
+    const compositeSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: signalColor,
+        lineWidth: 2,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
+    });
+    compositeSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.composite === 'number' ? p.composite : 0 })));
+    pane.series.push(compositeSeries);
+
+    const flatCount  = signalPaneData.filter(p => p.value !== 0).length;
+    const macdCount  = signalPaneData.filter(p => p.value2 !== 0).length;
+    const sigCount   = signalPaneData.filter(p => p.composite !== 0).length;
+    const smaAbove   = signalPaneData.filter(p => p.sma > 0).length;
+    const labelEl = document.getElementById('chart-label-Signals');
+    if (labelEl) labelEl.innerHTML = `<span style="color:#5d606b">Signals</span>&nbsp;<span style="color:rgba(38,166,154,0.9)">BB:${flatCount}</span>&nbsp;<span style="color:#2196f3">MACD:${macdCount}</span>&nbsp;<span style="color:rgba(255,152,0,0.85)">SMA:${smaAbove}↑/${signalPaneData.length - smaAbove}↓</span>&nbsp;<span style="color:rgba(200,200,200,0.85)">Result:${sigCount}</span>`;
+
+    // Sync time scale with main chart
+    const mainTimeScale = window.chartMain.timeScale();
+    pane.chart.timeScale().setVisibleLogicalRange(mainTimeScale.getVisibleLogicalRange());
+}
+
 function renderBalancePane(balancePaneData) {
     const pane = ensureBalancePane();
 
@@ -527,6 +652,37 @@ window.setPair = async (p) => {
         });
 
         addLog(`Loaded ${p}: ${data.length} candles (Range: ${currentRange}, TF: ${currentTimeframe})`);
+        updateMainChartLabel();
+    }
+};
+
+function updateMainChartLabel() {
+    const el = document.getElementById('chart-main-label');
+    if (!el) return;
+    const params = { ...(window.StrategyCore?.getDefaultParams?.() || {}), ...(window.Strategy?.params || {}) };
+    const parts = [];
+    if (currentPair) parts.push(currentPair);
+    if (currentTimeframe) parts.push(currentTimeframe);
+    if (params.useBB !== false) parts.push('BB(' + (params.bbPeriod || 20) + ', ' + (params.bbStdDev || 2) + ')');
+    el.textContent = parts.join('  ');
+}
+
+window.updatePaneLabels = function() {
+    updateMainChartLabel();
+    const params = { ...(window.StrategyCore?.getDefaultParams?.() || {}), ...(window.Strategy?.params || {}) };
+    if (window.IndicatorRenderers && typeof window.IndicatorRenderers.setPaneLabel === 'function') {
+        if (activePanes.Stochastic) {
+            const k = params.stochasticK || 14;
+            const d = params.stochasticD || 3;
+            const sl = params.stochasticSlowing || 3;
+            window.IndicatorRenderers.setPaneLabel('Stochastic', 'Stochastic  K=' + k + '  D=' + d + '  slowing=' + sl);
+        }
+        if (activePanes.MACD) {
+            window.IndicatorRenderers.setPaneLabel('MACD', 'MACD  fast=' + (params.macdFast || 12) + '  slow=' + (params.macdSlow || 26) + '  signal=' + (params.macdSignal || 9));
+        }
+        if (activePanes.ATR) {
+            window.IndicatorRenderers.setPaneLabel('ATR', 'ATR  fast=' + (params.atrFastPeriod || params.atrPeriod || 14) + '  slow=' + (params.atrSlowPeriod || params.atrSmoothPeriod || 28));
+        }
     }
 };
 
@@ -581,9 +737,9 @@ function updateIndicatorValues(options = {}) {
 
     // Получить значения для текущего индекса
     const smaVal = indicators.sma[idx]?.value;
-    const bbUpper = indicators.bb[idx]?.upper;
-    const bbMiddle = indicators.bb[idx]?.middle;
-    const bbLower = indicators.bb[idx]?.lower;
+    const bbUpper = indicators.bb[idx]?.u;
+    const bbMiddle = indicators.bb[idx]?.m;
+    const bbLower = indicators.bb[idx]?.l;
     const macdVal = indicators.macd[idx]?.macd;
     const macdSignalVal = indicators.macd[idx]?.signal;
     const macdHist = indicators.macd[idx]?.histogram;
@@ -705,6 +861,9 @@ window.updateBalance = function() {
 
     renderBalancePane(balancePaneData);
 };
+
+// Export signals pane renderer to global scope
+window.renderSignalsPane = renderSignalsPane;
 
 // ── Mini balance overview in topbar ─────────────────────────────────
 (function initMiniBalance() {

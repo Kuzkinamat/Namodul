@@ -1,7 +1,7 @@
 
         :root {
             --ps-width: 80px;
-            --worktime-strip-height: 28px;
+            --worktime-strip-height: 10px;
             --log-height: 200px;
             --settings-editor-width: 40vw;
             --btn-font-family: 'Segoe UI', sans-serif;
@@ -94,6 +94,7 @@
         }
         .sub-pane { height: 130px; flex-shrink: 0; }
         .chart-container { width: 100%; height: 100%; flex: 1 1 auto; min-height: 0; }
+        .pane-label { position: absolute; top: 4px; left: 4px; z-index: 10; font-size: 11px; font-family: 'Segoe UI', sans-serif; color: rgba(178, 181, 190, 0.65); pointer-events: none; user-select: none; line-height: 1.4; white-space: nowrap; }
         .v-line { position: absolute; top: 0; bottom: 0; left: calc(50% - (var(--ps-width) / 2)); border-left: 1px dashed rgba(41, 98, 255, 0.6); z-index: 1500; pointer-events: none; }
         #log-panel { height: var(--log-height); background: #131722; border-top: 2px solid #363c4e; display: flex; flex-direction: column; flex-shrink: 0; }
         #log-panel.collapsed { height: 30px; --log-height: 30px; }
@@ -219,6 +220,10 @@
         .strategy-launcher-spacer {
             flex: 1 1 auto;
             min-width: 0;
+        }
+        .topbar-strategy-selector {
+            min-width: 0;
+            flex: 0 1 160px;
         }
         .strategy-inline-code-panel {
             display: none;

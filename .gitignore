@@ -1,2 +1,4 @@
 lightweight-charts.standalone.production.js
 data/
+.venv/
+__pycache__

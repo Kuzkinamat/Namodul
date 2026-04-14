@@ -32,7 +32,7 @@ window.IndicatorRenderers = (function() {
         if (id === 'ATR') {
             wr.style.height = '65px';
         }
-        wr.innerHTML = '<div class="v-line"></div><div id="chart-' + id + '" class="chart-container"></div>';
+        wr.innerHTML = '<div class="v-line"></div><div id="chart-label-' + id + '" class="pane-label"></div><div id="chart-' + id + '" class="chart-container"></div>';
         document.getElementById('panels-container').appendChild(wr);
 
         const c = LightweightCharts.createChart(document.getElementById('chart-' + id), {
@@ -52,6 +52,8 @@ window.IndicatorRenderers = (function() {
     function renderBB(data, params, chartMain, mainSeriesRefs, LightweightCharts) {
         removeMainSeries('BB', chartMain, mainSeriesRefs);
         mainSeriesRefs.BB = [];
+        const bbLabelEl = document.getElementById('chart-main-label');
+        if (bbLabelEl) bbLabelEl.innerHTML = 'BB &nbsp;<span style="color:rgba(38,166,154,0.9)">period=' + (params.bbPeriod || 20) + '</span>&nbsp; <span style="color:rgba(33,150,243,0.9)">mid</span>&nbsp; <span style="color:rgba(38,166,154,0.9)">stdDev=' + (params.bbStdDev || 2) + '</span>';
         const bb = window.calcBB(data, params.bbPeriod, params.bbStdDev);
         [
             { k: 't', c: 'rgba(38,166,154,0.3)' },
@@ -64,27 +66,20 @@ window.IndicatorRenderers = (function() {
                 lastValueVisible: false,
                 priceLineVisible: false
             });
-            const keyMap = { t: 'upper', m: 'middle', b: 'lower' };
+            const keyMap = { t: 'u', m: 'm', b: 'l' };
             s.setData(bb.map(v => toLinePoint(v.time, v[keyMap[o.k]])));
             mainSeriesRefs.BB.push(s);
         });
     }
 
     function renderStochastic(data, params, pane, LightweightCharts, addLog) {
-        const stochasticData = window.calcStochastic(
-            data,
-            params.stochasticK,
-            params.stochasticD,
-            params.stochasticSlowing
-        );
+        const k = params.stochasticK || 14;
+        const d = params.stochasticD || 3;
+        const sl = params.stochasticSlowing || 3;
+        const labelEl = document.getElementById('chart-label-Stochastic');
+        if (labelEl) labelEl.innerHTML = 'Stochastic &nbsp;<span style="color:#ff00a6">K=' + k + '</span>&nbsp; <span style="color:#2196f3">D=' + d + '</span>&nbsp; slowing=' + sl;
+        const stochasticData = window.calcStochastic(data, k, d, sl);
 
-        const nonNullK = stochasticData.filter(d => d.k !== null).length;
-        const nonNullD = stochasticData.filter(d => d.d !== null).length;
-        
-        if (nonNullK > 0) {
-            const firstK = stochasticData.find(d => d.k !== null);
-            const lastK = stochasticData.slice().reverse().find(d => d.k !== null);
-        }
 
         const kLine = pane.chart.addSeries(LightweightCharts.LineSeries, {
             color: '#ff00a6',
@@ -106,6 +101,11 @@ window.IndicatorRenderers = (function() {
     }
 
     function renderMACD(data, params, pane, LightweightCharts) {
+        const fast = params.macdFast || 12;
+        const slow = params.macdSlow || 26;
+        const signal = params.macdSignal || 9;
+        const labelEl = document.getElementById('chart-label-MACD');
+        if (labelEl) labelEl.innerHTML = '<span style="color:#2196f3">MACD&nbsp; fast=' + fast + '&nbsp; slow=' + slow + '</span>&nbsp; <span style="color:#ff9800">signal=' + signal + '</span>';
         const h = pane.chart.addSeries(LightweightCharts.HistogramSeries, {
             lastValueVisible: false,
             priceLineVisible: false
@@ -123,7 +123,7 @@ window.IndicatorRenderers = (function() {
             priceLineVisible: false
         });
 
-        const macdData = window.calcMACD(data, params.macdFast, params.macdSlow, params.macdSignal);
+        const macdData = window.calcMACD(data, fast, slow, signal);
         h.setData(macdData.map(item => ({
             time: item.time,
             value: item.histogram,
@@ -139,6 +139,8 @@ window.IndicatorRenderers = (function() {
             if (addLog) addLog('ATR: calcATR function not found');
             return;
         }
+        const labelEl = document.getElementById('chart-label-ATR');
+        if (labelEl) labelEl.innerHTML = 'ATR &nbsp;<span style="color:#ffb347">fast=' + (params.atrFastPeriod || params.atrPeriod || 14) + '</span>&nbsp; <span style="color:#8ec5ff">slow=' + (params.atrSlowPeriod || params.atrSmoothPeriod || 28) + '</span>';
 
         pane.chart.applyOptions({
             rightPriceScale: {
@@ -224,6 +226,21 @@ window.IndicatorRenderers = (function() {
         pane.series.push(fastLine, slowLine);
     }
 
+    function renderSMA(data, params, chartMain, mainSeriesRefs, LightweightCharts) {
+        removeMainSeries('SMA', chartMain, mainSeriesRefs);
+        mainSeriesRefs.SMA = [];
+        const period = Math.max(2, Number(params.smaPeriod || 200));
+        const smaData = window.calcSMA(data, period);
+        const s = chartMain.addSeries(LightweightCharts.LineSeries, {
+            color: 'rgba(255,152,0,0.8)',
+            lineWidth: 1,
+            lastValueVisible: false,
+            priceLineVisible: false
+        });
+        s.setData(smaData.map(v => toLinePoint(v.time, v.value)));
+        mainSeriesRefs.SMA.push(s);
+    }
+
     function toggleIndicator(ctx) {
         const {
             id,
@@ -251,6 +268,10 @@ window.IndicatorRenderers = (function() {
         if (!isChecked) {
             removeMainSeries(id, chartMain, mainSeriesRefs);
             removePane(id, activePanes);
+            if (id === 'BB') {
+                const bbLabelEl = document.getElementById('chart-main-label');
+                if (bbLabelEl) bbLabelEl.innerHTML = '';
+            }
             onResize();
             return true;
         }
@@ -261,6 +282,11 @@ window.IndicatorRenderers = (function() {
 
         if (id === 'BB') {
             renderBB(data, params, chartMain, mainSeriesRefs, LightweightCharts);
+            return true;
+        }
+
+        if (id === 'SMA') {
+            renderSMA(data, params, chartMain, mainSeriesRefs, LightweightCharts);
             return true;
         }
 
@@ -286,7 +312,13 @@ window.IndicatorRenderers = (function() {
         return true;
     }
 
+    function setPaneLabel(id, text) {
+        const el = document.getElementById('chart-label-' + id);
+        if (el) el.textContent = text;
+    }
+
     return {
-        toggleIndicator
+        toggleIndicator,
+        setPaneLabel
     };
 })();

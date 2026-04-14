@@ -76,6 +76,10 @@ function calcATR(candles, period = 60, smoothPeriod = 60) {
   return smoothed;
 }
 
+if (typeof window !== 'undefined') {
+  window.calcATR = calcATR;
+}
+
 /**
  * Export for use in strategy
  */

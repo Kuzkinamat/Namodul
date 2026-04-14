@@ -14,9 +14,10 @@
     const FLOATING_PANEL_DEFAULTS = Object.freeze({
         ind: { left: 24, top: 98 },
         mm: { left: 24, top: 300 },
-        hours: { left: 24, top: 502 }
+        hours: { left: 24, top: 502 },
+        signals: { left: 240, top: 98 }
     });
-    const EDITOR_WINDOW_TYPES = Object.freeze(['ind', 'mm', 'hours', 'code']);
+    const EDITOR_WINDOW_TYPES = Object.freeze(['ind', 'mm', 'hours', 'signals', 'code']);
     const FALLBACK_STRATEGIES = [
         { file: 'strategy-(autorun).js', label: 'Autorun' }
     ];
@@ -173,6 +174,7 @@
         const idMap = {
             useWorktime: 'Worktime',
             useBB: 'BB',
+            useSMA: 'SMA',
             useATR: 'ATR',
             useMACD: 'MACD',
             useStochastic: 'Stochastic'
@@ -235,11 +237,16 @@
         return document.getElementById('strategy-hours-editor');
     }
 
+    function getSignalsEditor() {
+        return document.getElementById('strategy-signals-editor');
+    }
+
     function getEditorMap() {
         return {
             ind: getIndicatorsEditor(),
             mm: getMoneyManagementEditor(),
             hours: getHoursEditor(),
+            signals: getSignalsEditor(),
             code: getEditor()
         };
     }
@@ -256,7 +263,8 @@
         return {
             ind: getFloatingEditorPanel('ind'),
             mm: getFloatingEditorPanel('mm'),
-            hours: getFloatingEditorPanel('hours')
+            hours: getFloatingEditorPanel('hours'),
+            signals: getFloatingEditorPanel('signals')
         };
     }
 
@@ -280,7 +288,13 @@
             return;
         }
 
+        const wasOpen = settingsPanel.classList.contains('open');
+        if (Boolean(isOpen) === wasOpen && Boolean(isOpen) === codePanel.classList.contains('open')) {
+            return; // уже в нужном состоянии
+        }
+
         codePanel.classList.toggle('open', isOpen);
+        settingsPanel.classList.toggle('open', isOpen);
         settingsPanel.classList.toggle('code-editor-open', isOpen);
         if (!isOpen) {
             settingsPanel.style.width = '';
@@ -430,6 +444,10 @@
 
         dragHandle.addEventListener('pointerdown', function(event) {
             if (event.button !== 0 && event.pointerType !== 'touch') {
+                return;
+            }
+
+            if (isInteractiveDragTarget(event.target)) {
                 return;
             }
 
@@ -788,10 +806,17 @@
     }
 
     function parseUnifiedStrategySource(source) {
+        let signalsParsed = '';
+        try {
+            signalsParsed = extractTemplateLiteral(source, 'signalsSource');
+        } catch (e) {
+            // signalsSource is optional — not present in older strategy files
+        }
         return {
             ind: extractDefinitionSection(source, 'indicatorSettings'),
             mm: extractDefinitionSection(source, 'moneyManagementSettings'),
             hours: extractDefinitionSection(source, 'hoursSettings'),
+            signals: signalsParsed,
             code: extractTemplateLiteral(source, 'logicSource')
         };
     }
@@ -803,10 +828,74 @@
             .replace(/\$\{/g, '\\${');
     }
 
+    // Extract buildLogicEvaluator function from the current strategy file source
+    function extractBuildLogicEvaluator() {
+        const src = window.__strategyCoreSource || '';
+        const startMarker = '    function buildLogicEvaluator(source) {';
+        const startIdx = src.indexOf(startMarker);
+        if (startIdx === -1) {
+            // Fallback: return the canonical version
+            return getCanonicalBuildLogicEvaluator();
+        }
+
+        // Find matching closing brace by counting braces
+        let depth = 0;
+        let endIdx = -1;
+        for (let j = startIdx; j < src.length; j++) {
+            if (src[j] === '{') depth++;
+            if (src[j] === '}') {
+                depth--;
+                if (depth === 0) {
+                    endIdx = j + 1;
+                    break;
+                }
+            }
+        }
+
+        if (endIdx === -1) {
+            return getCanonicalBuildLogicEvaluator();
+        }
+
+        return src.substring(startIdx, endIdx);
+    }
+
+    // Canonical buildLogicEvaluator — single source of truth for new strategies
+    function getCanonicalBuildLogicEvaluator() {
+        return [
+            '    function buildLogicEvaluator(source) {',
+            "        const logicBody = String(source || '').trim();",
+            '        if (!logicBody) {',
+            '            return function() { return { buy: 0, sell: 0 }; };',
+            '        }',
+            '        const fullCode = "const c = arguments[0].c; const i = arguments[0].i; const t = arguments[0].t; const s = arguments[0].s || {}; let buy = 0, sell = 0; " + logicBody + " return { buy, sell };";',
+            '        const compiled = new Function(fullCode);',
+            '        return function(ctx) {',
+            '            if (!ctx) return { buy: 0, sell: 0 };',
+            '            try {',
+            '                const c = typeof ctx.c === "function" ? ctx.c : null;',
+            '                const i = ctx.i || {};',
+            '                const t = typeof ctx.t === "function" ? ctx.t : null;',
+            '                const s = ctx.s || {};',
+            '                if (!c || !i) return { buy: 0, sell: 0 };',
+            '                const result = compiled.call(null, { c, i, t, s });',
+            '                return {',
+            '                    buy: Number.isFinite(result.buy) ? result.buy : 0,',
+            '                    sell: Number.isFinite(result.sell) ? result.sell : 0',
+            '                };',
+            '            } catch (err) {',
+            '                console.error("Logic evaluation error:", err.message);',
+            '                return { buy: 0, sell: 0 };',
+            '            }',
+            '        };',
+            '    }'
+        ].join('\n');
+    }
+
     function buildUnifiedStrategySource(parts) {
         const indicatorSettings = String(parts && parts.ind ? parts.ind : '').trim();
         const moneyManagementSettings = String(parts && parts.mm ? parts.mm : '').trim();
         const hoursSettings = String(parts && parts.hours ? parts.hours : '').trim();
+        const signalsSource = String(parts && parts.signals ? parts.signals : '').replace(/\r\n/g, '\n').trim();
         const logicSource = String(parts && parts.code ? parts.code : '').replace(/\r\n/g, '\n').trim();
 
         if (!indicatorSettings || !moneyManagementSettings || !hoursSettings || !logicSource) {
@@ -814,6 +903,10 @@
         }
 
         const escapedLogicSource = escapeTemplateLiteralContent(logicSource);
+        const escapedSignalsSource = escapeTemplateLiteralContent(signalsSource);
+
+        // Extract buildLogicEvaluator from the original strategy file source
+        const buildLogicEvaluatorSource = extractBuildLogicEvaluator();
 
         return [
             '// strategy-(autorun).js',
@@ -822,25 +915,30 @@
             'window.StrategyDefinition = (function() {',
             "    'use strict';",
             '',
-            '    function buildLogicEvaluator(source) {',
+            buildLogicEvaluatorSource,
+            '',
+            '    function buildSignalsEvaluator(source) {',
             "        const logicBody = String(source || '').trim();",
-            '        if (!logicBody) {',
-            '            return function() {',
-            '                return { buy: 0, sell: 0 };',
-            '            };',
-            '        }',
-            '',
-            "        const evaluator = new Function('ctx', `let buy = 0, sell = 0;\\n${logicBody}\\nreturn { buy, sell };`);",
+            '        if (!logicBody) { return function() { return { bb: 0, macd: 0, value: 0 }; }; }',
+            '        const fullCode = "const c = arguments[0].c; const i = arguments[0].i; const t = arguments[0].t; let signal = 0, signal2 = 0, signal3 = 0, signal4 = 0; " + logicBody + " return { bb: signal, macd: signal2, value: signal3, sma: signal4 };";',
+            '        const compiled = new Function(fullCode);',
             '        return function(ctx) {',
-            '            const result = evaluator(ctx);',
-            "            if (!result || typeof result !== 'object') {",
-            '                return { buy: 0, sell: 0 };',
+            '            if (!ctx) return { bb: 0, macd: 0, value: 0 };',
+            '            try {',
+            '                const c = typeof ctx.c === "function" ? ctx.c : null;',
+            '                const i = ctx.i || {};',
+            '                const t = typeof ctx.t === "function" ? ctx.t : null;',
+            '                if (!c || !i) return { bb: 0, macd: 0, value: 0 };',
+            '                const result = compiled.call(null, { c, i, t });',
+            '                return {',
+            '                    bb:    Number.isFinite(result.bb)    ? result.bb    : 0,',
+            '                    macd:  Number.isFinite(result.macd)  ? result.macd  : 0,',
+            '                    value: Number.isFinite(result.value) ? result.value : 0',
+            '                };',
+            '            } catch (err) {',
+            '                console.error("Signals evaluation error:", err.message);',
+            '                return { bb: 0, macd: 0, value: 0 };',
             '            }',
-            '',
-            '            return {',
-            '                buy: Number.isFinite(result.buy) ? result.buy : 0,',
-            '                sell: Number.isFinite(result.sell) ? result.sell : 0',
-            '            };',
             '        };',
             '    }',
             '',
@@ -855,6 +953,12 @@
             '`;',
             '',
             '    const evaluateLogic = buildLogicEvaluator(logicSource);',
+            '',
+            '    const signalsSource = `',
+            escapedSignalsSource,
+            '`;',
+            '',
+            '    const evaluateSignals = buildSignalsEvaluator(signalsSource);',
             '',
             '    const DEFAULT_PARAMS = Object.freeze({',
             '        ...moneyManagementSettings,',
@@ -880,10 +984,16 @@
             '            moneyManagement: moneyManagementSettings,',
             '            hours: hoursSettings',
             '        }),',
-            '        logic: Object.freeze({',
+            '        entry: Object.freeze({',
             '            source: logicSource,',
             '            evaluate: evaluateLogic',
             '        }),',
+            '        signals: Object.freeze({',
+            '            source: signalsSource,',
+            '            evaluate: evaluateSignals,',
+            "            color: 'rgba(38,166,154,0.9)',",
+            "            colorNeg: '#ff9800'",
+            '        }),',,
             '        DEFAULT_PARAMS,',
             '        getDefaultParams,',
             '        normalizeParams',
@@ -918,8 +1028,8 @@
     function validateAppliedFile(fileName) {
         return STRATEGY_FILE_PATTERN.test(fileName || '')
             && window.StrategyDefinition
-            && window.StrategyDefinition.logic
-            && typeof window.StrategyDefinition.logic.evaluate === 'function'
+            && window.StrategyDefinition.entry
+            && typeof window.StrategyDefinition.entry.evaluate === 'function'
             && window.StrategyParams
             && typeof window.StrategyParams.getDefaultParams === 'function';
     }
@@ -960,12 +1070,16 @@
             editors.ind.value = parsed.ind;
             editors.mm.value = parsed.mm;
             editors.hours.value = parsed.hours;
+            if (editors.signals) {
+                editors.signals.value = parsed.signals || '';
+            }
             editors.code.value = parsed.code;
             window.__strategyCoreSource = mainText;
             return {
                 ind: parsed.ind,
                 mm: parsed.mm,
                 hours: parsed.hours,
+                signals: parsed.signals || '',
                 code: parsed.code,
                 main: mainText
             };
@@ -1003,6 +1117,7 @@
         const indCode = editors.ind.value.trim();
         const mmCode = editors.mm.value.trim();
         const hoursCode = editors.hours.value.trim();
+        const signalsCode = editors.signals ? editors.signals.value.trim() : '';
         const strategyCode = editors.code.value.trim();
         if (!indCode || !mmCode || !hoursCode || !strategyCode) {
             log('Один из редакторов пуст');
@@ -1023,6 +1138,7 @@
                 ind: indCode,
                 mm: mmCode,
                 hours: hoursCode,
+                signals: signalsCode,
                 code: strategyCode
             });
 
@@ -1044,6 +1160,9 @@
 
                 syncIndicatorSelectionFromStrategyParams();
                 rerunStrategyPreview();
+                if (typeof window.updatePaneLabels === 'function') {
+                    window.updatePaneLabels();
+                }
                 return true;
             };
 
@@ -1204,7 +1323,6 @@
                         Object.keys(FLOATING_PANEL_DEFAULTS).forEach(function(type) {
                             setFloatingEditorOpen(type, false);
                         });
-                        setInlineCodeOpen(false);
                     }
                 });
             });

@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>namoduL 0.2.5</title>
+    <title>namoduL 0.3.0</title>
     <meta charset="UTF-8">
     <link rel="stylesheet" href="style.css?v=20260413g">
 
@@ -46,6 +46,7 @@
             <div class="dropdown" onclick="event.stopPropagation()">
                 <label class="ind-row"><input type="checkbox" data-id="Worktime" onchange="toggleIndicator('Worktime', this.checked)">Worktime</label>
                 <label class="ind-row"><input type="checkbox" data-id="BB" onchange="toggleIndicator('BB', this.checked)">Bollinger Bands</label>
+                <label class="ind-row"><input type="checkbox" data-id="SMA" onchange="toggleIndicator('SMA', this.checked)">SMA</label>
                 <hr class="menu-divider">
                 <label class="ind-row"><input type="checkbox" data-id="MACD" onchange="toggleIndicator('MACD', this.checked)">MACD</label>
                 <label class="ind-row"><input type="checkbox" data-id="ATR" onchange="toggleIndicator('ATR', this.checked)">ATR</label>
@@ -53,7 +54,22 @@
             </div>
         </div>
         <div class="menu-item">
-            <button class="nav-btn" onclick="toggleSettings()">STRATEGY ⚙️</button>
+            <label class="strategy-selector topbar-strategy-selector" for="strategy-file-select">
+                <select id="strategy-file-select" class="strategy-select"></select>
+            </label>
+            <button class="nav-btn strategy-btn" onclick="resetStrategyCode()">Reset</button>
+            <button class="nav-btn strategy-btn" onclick="applyStrategyCode()">Apply</button>
+        </div>
+        <div class="menu-item">
+            <button class="nav-btn">STRATEGY ▾</button>
+            <div class="dropdown" onclick="event.stopPropagation()">
+                <div class="ind-row header">Editor</div>
+                <div class="ind-row" onclick="toggleStrategyEditorWindow('ind')">Indicators</div>
+                <div class="ind-row" onclick="toggleStrategyEditorWindow('mm')">MM</div>
+                <div class="ind-row" onclick="toggleStrategyEditorWindow('hours')">Hours</div>
+                <div class="ind-row" onclick="toggleStrategyEditorWindow('signals')">Signals</div>
+                <div class="ind-row" onclick="toggleStrategyEditorWindow('code')">Code</div>
+            </div>
         </div>
         <div id="mini-balance-wrap">
             <canvas id="mini-balance-canvas"></canvas>
@@ -65,26 +81,14 @@
 
     <div id="settings-panel">
         <div class="settings-panel-header" data-settings-drag-handle="true">
-            <span class="settings-panel-title">Strategy Editor</span>
-            <span class="settings-panel-hint">Drag</span>
+            <span class="settings-panel-title">Code</span>
+            <div class="floating-editor-actions">
+                <button class="nav-btn strategy-btn" type="button" onclick="openCodeBuilder()">Builder</button>
+                <button class="nav-btn strategy-btn" type="button" onclick="applyStrategyCode()">Apply</button>
+                <button class="nav-btn strategy-btn" type="button" onclick="toggleStrategyEditorWindow('code')">Close</button>
+            </div>
         </div>
         <div class="settings-section">
-            <div class="strategy-actions">
-                <label class="strategy-selector" for="strategy-file-select">
-                    <span>Strategy</span>
-                    <select id="strategy-file-select" class="strategy-select"></select>
-                </label>
-                <button class="nav-btn strategy-btn" onclick="resetStrategyCode()">Reset</button>
-            </div>
-            <div class="strategy-editor-launchers">
-                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="ind" onclick="toggleStrategyEditorWindow('ind')">Indicators</button>
-                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="mm" onclick="toggleStrategyEditorWindow('mm')">MM</button>
-                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="hours" onclick="toggleStrategyEditorWindow('hours')">Hours</button>
-                <button class="nav-btn strategy-btn" type="button" data-editor-toggle="code" onclick="toggleStrategyEditorWindow('code')">Code</button>
-                <button class="nav-btn strategy-btn" type="button" id="code-builder-btn" onclick="openCodeBuilder()">Builder</button>
-                <span class="strategy-launcher-spacer"></span>
-                <button class="nav-btn strategy-btn" onclick="applyStrategyCode()">Apply</button>
-            </div>
             <div id="strategy-inline-code-panel" class="strategy-inline-code-panel">
                 <textarea class="code-editor code-editor-main strategy-inline-code-editor" id="strategy-code-editor" placeholder="// Strategy logic (ctx)"></textarea>
             </div>
@@ -124,9 +128,21 @@
         <textarea class="code-editor code-editor-split" id="strategy-hours-editor" placeholder="// Trading hours settings"></textarea>
     </div>
 
+    <div id="strategy-editor-signals-panel" class="floating-editor-panel">
+        <div class="floating-editor-header" data-editor-drag-handle="signals">
+            <span class="floating-editor-title">Signals</span>
+            <div class="floating-editor-actions">
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); applyStrategyCode()">Apply</button>
+                <button class="nav-btn strategy-btn" type="button" onclick="event.stopPropagation(); toggleStrategyEditorWindow('signals')">Close</button>
+            </div>
+        </div>
+        <textarea class="code-editor code-editor-split" id="strategy-signals-editor" placeholder="// Signal pane calculation&#10;// Use i.st(0), i.bb(0), c(0) etc.&#10;// Set: signal = number (-1..1)"></textarea>
+    </div>
+
     <div id="panels-container">
         <div id="main-pane" class="pane-wrapper">
             <div class="v-line"></div>
+            <div id="chart-main-label" class="pane-label"></div>
             <div id="chart-main" class="chart-container"></div>
             <div id="main-session-background">
                 <div id="main-session-track"></div>
@@ -159,6 +175,7 @@
     <script src="./strategy-core-context.js"></script>
     <script src="./strategy-core-indicators.js?v=20260413a"></script>
     <script src="./strategy-core-signals.js"></script>
+    <script src="./strategy-indicator-signals.js"></script>
     <script src="./strategy-core.js"></script>
     <script src="./strategy.js?v=20260413a"></script>
     <script src="./strategy-editor.js?v=20260413d"></script>

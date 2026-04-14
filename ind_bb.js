@@ -1,6 +1,6 @@
 function calculateBollingerBands(data, period = 20, stdDev = 2) {
     if (!data || !data.length || data.length < period) {
-        return data.map(d => ({ time: d.time, upper: null, middle: null, lower: null }));
+        return data.map(d => ({ time: d.time, u: null, m: null, l: null }));
     }
 
     const bb = [];
@@ -15,7 +15,7 @@ function calculateBollingerBands(data, period = 20, stdDev = 2) {
     
     // Set first period-1 values to null
     for (let i = 0; i < period - 1; i++) {
-        bb.push({ time: data[i].time, upper: null, middle: null, lower: null });
+        bb.push({ time: data[i].time, u: null, m: null, l: null });
     }
     
     // Sliding window for remaining values
@@ -38,9 +38,9 @@ function calculateBollingerBands(data, period = 20, stdDev = 2) {
 
         bb.push({
             time: data[i].time,
-            upper: mean + stdDev * std,
-            middle: mean,
-            lower: mean - stdDev * std
+            u: mean + stdDev * std,      // u = upper band
+            m: mean,                      // m = middle band
+            l: mean - stdDev * std        // l = lower band
         });
     }
     

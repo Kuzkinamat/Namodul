@@ -119,22 +119,28 @@ window.StrategyCoreContext = (function() {
     function createConditionContext(i, data, indicators, tradeHistory, params) {
         const activeParams = params || window.Strategy?.params || {};
 
-        function c(lag) {
+        function c(lag = 0) {
             const idx = i + lag;
             if (idx < 0 || idx >= data.length) return null;
             const candle = data[idx];
             return candle ? { ...candle, ...getSessionInfo(candle.time, activeParams) } : null;
         }
 
-        function ind(name, lag) {
+        function ind(name, lag = 0) {
             const idx = i + lag;
             if (idx < 0) {
-                return name === 'bb' ? { upper: null, middle: null, lower: null } : null;
+                if (name === 'bb') return { u: null, m: null, l: null };
+                if (name === 'stochastic') return { k: null, d: null };
+                if (name === 'macd') return { macd: null, signal: null, histogram: null };
+                return null;
             }
 
             const series = indicators[name];
             if (!series) {
-                return name === 'bb' ? { upper: null, middle: null, lower: null } : null;
+                if (name === 'bb') return { u: null, m: null, l: null };
+                if (name === 'stochastic') return { k: null, d: null };
+                if (name === 'macd') return { macd: null, signal: null, histogram: null };
+                return null;
             }
 
             const value = series[idx];
@@ -142,7 +148,42 @@ window.StrategyCoreContext = (function() {
                 return value;
             }
 
-            return name === 'bb' ? { upper: null, middle: null, lower: null } : null;
+            if (name === 'bb') return { u: null, m: null, l: null };
+            if (name === 'stochastic') return { k: null, d: null };
+            if (name === 'macd') return { macd: null, signal: null, histogram: null };
+            return null;
+        }
+
+        // Namespace i для индикаторов (согласно диктионарю)
+        // Map short names to actual indicator keys in the indicators object
+        const indicatorKeyMap = { st: 'stochastic' };
+        
+        const i_namespace = {
+            bb: function(lag = 0) {
+                return ind('bb', lag);
+            },
+            st: function(lag = 0) {
+                return ind('stochastic', lag);
+            },
+            sma: function(lag = 0) {
+                return ind('sma', lag);
+            },
+            macd: function(lag = 0) {
+                return ind('macd', lag);
+            },
+            atr: function(lag = 0) {
+                return ind('atr', lag);
+            }
+        };
+
+        function t(lag = 0) {
+            const history = tradeHistory || [];
+            if (!history.length) return null;
+            
+            const idx = history.length - 1 + lag;
+            if (idx < 0 || idx >= history.length) return null;
+            
+            return history[idx];
         }
 
         function lastLossWithinTf(tfCount = 2) {
@@ -198,13 +239,65 @@ window.StrategyCoreContext = (function() {
             return count;
         }
 
+        // Helper: Create functions for new naming system without Proxy overhead
+        function createIndicatorNamespace(nsObj) {
+            const nsResult = {};
+            for (const [name, func] of Object.entries(nsObj)) {
+                nsResult[name] = func;
+            }
+            return nsResult;
+        }
+
+        // Helper: Proxy for c() - allows c.open and c(-1).open syntax
+        function createCandleAccessor(candleFunc) {
+            return new Proxy(candleFunc, {
+                get: (target, prop) => {
+                    if (typeof prop === 'symbol' || prop === 'name' || prop === 'length' || prop === 'constructor' || prop === 'apply' || prop === 'bind' || prop === 'call') {
+                        return Reflect.get(target, prop);
+                    }
+                    if (typeof target[prop] === 'function') {
+                        return target[prop];
+                    }
+                    const candle = target(0);
+                    return candle ? candle[prop] : undefined;
+                },
+                apply: (target, thisArg, args) => {
+                    return target.apply(thisArg, args);
+                }
+            });
+        }
+
+        // Helper: Proxy for t() - allows t.dir and t(-1).dir syntax
+        function createTradeAccessor(tradeFunc) {
+            return new Proxy(tradeFunc, {
+                get: (target, prop) => {
+                    if (typeof prop === 'symbol' || prop === 'name' || prop === 'length') {
+                        return Reflect.get(target, prop);
+                    }
+                    if (typeof target[prop] === 'function') {
+                        return target[prop];
+                    }
+                    const trade = target(0);
+                    return trade ? trade[prop] : undefined;
+                },
+                apply: (target, thisArg, args) => {
+                    return target.apply(thisArg, args);
+                }
+            });
+        }
+
+        // Create indicator namespace
+        const i_namespace_result = createIndicatorNamespace(i_namespace);
+        
         return {
-            i,
+            barIndex: i,
             data,
             indicators,
             tradeHistory: tradeHistory || [],
-            c,
+            c: createCandleAccessor(c),
             ind,
+            i: i_namespace_result,
+            t: createTradeAccessor(t),
             lastLossWithinTf,
             lossCountWithinPeriods,
 
