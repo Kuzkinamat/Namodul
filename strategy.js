@@ -7,6 +7,7 @@
     const FALLBACK_PARAMS = {
         expirationMinutes: 15,
         winPayout: 0.8,
+        minEntryIntervalMultiplier: 2,
         rules: '',
         filterTradingHours: false
     };
@@ -14,6 +15,7 @@
     const STRATEGY_SETTING_KEYS = [
         'expirationMinutes',
         'winPayout',
+        'minEntryIntervalMultiplier',
         'rules',
         'filterTradingHours'
     ];
@@ -312,21 +314,24 @@
                 const strength = signal.type === 'buy' ? signal.buyStrength : signal.sellStrength;
 
                 // Determine marker color by trade result
-                const tradeKey = `${signal.time}_${signal.type}`;
+                // Use actualEntryTime if available, otherwise use signal.time
+                const actualEntryTime = signal.entryTime !== undefined ? signal.entryTime : signal.time;
+                const tradeKey = `${actualEntryTime}_${signal.type}`;
                 const tradeResult = tradeResultMap[tradeKey];
                 const dealSize = tradeStakeMap[tradeKey] || (Number(strength) || 1);
                 const dealSizeText = dealSize.toFixed(1);
                 
                 let markerColor;
                 if (tradeResult === 'win') {
-                    markerColor = '#90EE90'; // Green for win
+                    markerColor = '#26a69a'; // Green for win (from MACD)
                 } else if (tradeResult === 'loss') {
-                    markerColor = '#FFD700'; // Yellow for loss
+                    markerColor = '#ef5350'; // Red for loss (from MACD)
                 } else {
                     // If result unknown, use color by type
                     markerColor = signal.type === 'buy' ? '#26a69a' : '#ef5350';
                 }
 
+                // Entry marker with sum
                 markers.push({
                     time: signal.time,
                     position: signal.type === 'buy' ? 'belowBar' : 'aboveBar',
@@ -334,6 +339,16 @@
                     shape: signal.type === 'buy' ? 'arrowUp' : 'arrowDown',
                     text: dealSizeText
                 });
+                
+                // Close marker on close candle
+                if (signal.closeTime !== undefined) {
+                    markers.push({
+                        time: signal.closeTime,
+                        position: signal.type === 'buy' ? 'belowBar' : 'aboveBar',
+                        color: markerColor,
+                        shape: 'diamond'
+                    });
+                }
             });
 
             this.markerBaseList = markers.slice();
@@ -385,34 +400,66 @@
             }
 
             for (const signal of signals) {
-                const entryIndex = timeIndexMap.get(signal.time);
+                // Use entryTime if available (actual entry), otherwise use signal.time (marker time)
+                const actualEntryTime = signal.entryTime !== undefined ? signal.entryTime : signal.time;
+                const entryIndex = timeIndexMap.get(actualEntryTime);
                 if (entryIndex === undefined) {
-                    log(`Signal with time ${signal.time} not found in data`);
+                    log(`Signal with time ${actualEntryTime} not found in data`);
                     continue;
                 }
 
-                const closeTime = signal.time + expirationSeconds;
-                let closeIndex = -1;
-
-                for (let i = entryIndex; i < data.length; i++) {
-                    if (data[i].time >= closeTime) {
-                        closeIndex = i;
-                        break;
-                    }
-                }
-
-                if (closeIndex === -1) {
-                    closeIndex = data.length - 1;
-                }
-
                 const entryPrice = signal.price;
-                const closePrice = data[closeIndex].close;
+                const closeTime = actualEntryTime + expirationSeconds;
+                let closeIndex = -1;
+                let closePrice = null;
 
+                // If result already computed in calculateSignals, use it
                 let isWin = false;
-                if (signal.type === 'buy') {
-                    isWin = closePrice > entryPrice;
-                } else if (signal.type === 'sell') {
-                    isWin = closePrice < entryPrice;
+                if (signal.tradeResult !== undefined) {
+                    isWin = signal.tradeResult === 'win';
+                    // Find the close index from signal data
+                    if (signal.closeTime !== undefined) {
+                        for (let i = entryIndex; i < data.length; i++) {
+                            if (data[i].time === signal.closeTime) {
+                                closeIndex = i;
+                                closePrice = data[i].close;
+                                break;
+                            }
+                        }
+                    }
+                    if (closeIndex === -1) {
+                        // Fallback: search by closeTime if signal.closeTime not available
+                        for (let i = entryIndex; i < data.length; i++) {
+                            if (data[i].time > closeTime) {
+                                closeIndex = i;
+                                break;
+                            }
+                        }
+                        if (closeIndex === -1) {
+                            closeIndex = data.length - 1;
+                        }
+                        closePrice = data[closeIndex].close;
+                    }
+                } else {
+                    // Compute result (for signals not yet closed in calculateSignals)
+                    for (let i = entryIndex; i < data.length; i++) {
+                        if (data[i].time > closeTime) {
+                            closeIndex = i;
+                            break;
+                        }
+                    }
+
+                    if (closeIndex === -1) {
+                        closeIndex = data.length - 1;
+                    }
+
+                    closePrice = data[closeIndex].close;
+
+                    if (signal.type === 'buy') {
+                        isWin = closePrice > entryPrice;
+                    } else if (signal.type === 'sell') {
+                        isWin = closePrice < entryPrice;
+                    }
                 }
 
                 const strength = signal.type === 'buy' ? signal.buyStrength : signal.sellStrength;
@@ -425,7 +472,7 @@
                 profitByCandleIndex[closeIndex] += profit;
 
                 this.tradeHistory.push({
-                    time: signal.time,
+                    time: actualEntryTime,
                     type: signal.type,
                     price: entryPrice,
                     closeTime: data[closeIndex].time,

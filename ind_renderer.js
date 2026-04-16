@@ -52,13 +52,15 @@ window.IndicatorRenderers = (function() {
     function renderBB(data, params, chartMain, mainSeriesRefs, LightweightCharts) {
         removeMainSeries('BB', chartMain, mainSeriesRefs);
         mainSeriesRefs.BB = [];
+        const bbColor = 'rgba(38,166,154,0.3)';
+        const bbMidColor = 'rgba(33,150,243,0.5)';
         const bbLabelEl = document.getElementById('chart-main-label');
-        if (bbLabelEl) bbLabelEl.innerHTML = 'BB &nbsp;<span style="color:rgba(38,166,154,0.9)">period=' + (params.bbPeriod || 20) + '</span>&nbsp; <span style="color:rgba(33,150,243,0.9)">mid</span>&nbsp; <span style="color:rgba(38,166,154,0.9)">stdDev=' + (params.bbStdDev || 2) + '</span>';
+        if (bbLabelEl) bbLabelEl.innerHTML = '<span style="color:' + bbColor + '">BB &nbsp;period=' + params.bbPeriod + '&nbsp; mid&nbsp; stdDev=' + params.bbStdDev + '</span>';
         const bb = window.calcBB(data, params.bbPeriod, params.bbStdDev);
         [
-            { k: 't', c: 'rgba(38,166,154,0.3)' },
-            { k: 'm', c: 'rgba(33,150,243,0.5)' },
-            { k: 'b', c: 'rgba(38,166,154,0.3)' }
+            { k: 't', c: bbColor },
+            { k: 'm', c: bbMidColor },
+            { k: 'b', c: bbColor }
         ].forEach(o => {
             const s = chartMain.addSeries(LightweightCharts.LineSeries, {
                 color: o.c,
@@ -73,16 +75,17 @@ window.IndicatorRenderers = (function() {
     }
 
     function renderStochastic(data, params, pane, LightweightCharts, addLog) {
-        const k = params.stochasticK || 14;
-        const d = params.stochasticD || 3;
-        const sl = params.stochasticSlowing || 3;
+        const colorK = '#ff00a6';
+        const colorD = '#2196f3';
         const labelEl = document.getElementById('chart-label-Stochastic');
-        if (labelEl) labelEl.innerHTML = 'Stochastic &nbsp;<span style="color:#ff00a6">K=' + k + '</span>&nbsp; <span style="color:#2196f3">D=' + d + '</span>&nbsp; slowing=' + sl;
+        if (labelEl) labelEl.innerHTML = 'Stochastic &nbsp;<span style="color:' + colorK + '">K=' + params.stochasticK + '</span>&nbsp; <span style="color:' + colorD + '">D=' + params.stochasticD + '</span>&nbsp; slowing=' + params.stochasticSlowing;
+        const k = params.stochasticK;
+        const d = params.stochasticD;
+        const sl = params.stochasticSlowing;
         const stochasticData = window.calcStochastic(data, k, d, sl);
 
-
         const kLine = pane.chart.addSeries(LightweightCharts.LineSeries, {
-            color: '#ff00a6',
+            color: colorK,
             lineWidth: 1,
             lastValueVisible: false,
             priceLineVisible: false
@@ -91,7 +94,7 @@ window.IndicatorRenderers = (function() {
         pane.series.push(kLine);
 
         const dLine = pane.chart.addSeries(LightweightCharts.LineSeries, {
-            color: '#2196f3',
+            color: colorD,
             lineWidth: 1,
             lastValueVisible: false,
             priceLineVisible: false
@@ -101,23 +104,25 @@ window.IndicatorRenderers = (function() {
     }
 
     function renderMACD(data, params, pane, LightweightCharts) {
-        const fast = params.macdFast || 12;
-        const slow = params.macdSlow || 26;
-        const signal = params.macdSignal || 9;
+        const colorMACD = '#2196f3';
+        const colorSignal = '#ff9800';
         const labelEl = document.getElementById('chart-label-MACD');
-        if (labelEl) labelEl.innerHTML = '<span style="color:#2196f3">MACD&nbsp; fast=' + fast + '&nbsp; slow=' + slow + '</span>&nbsp; <span style="color:#ff9800">signal=' + signal + '</span>';
+        if (labelEl) labelEl.innerHTML = '<span style="color:' + colorMACD + '">MACD&nbsp; fast=' + params.macdFast + '&nbsp; slow=' + params.macdSlow + '&nbsp; signal=' + params.macdSignal + '</span>';
+        const fast = params.macdFast;
+        const slow = params.macdSlow;
+        const signal = params.macdSignal;
         const h = pane.chart.addSeries(LightweightCharts.HistogramSeries, {
             lastValueVisible: false,
             priceLineVisible: false
         });
         const l1 = pane.chart.addSeries(LightweightCharts.LineSeries, {
-            color: '#2196f3',
+            color: colorMACD,
             lineWidth: 1,
             lastValueVisible: false,
             priceLineVisible: false
         });
         const l2 = pane.chart.addSeries(LightweightCharts.LineSeries, {
-            color: '#ff9800',
+            color: colorSignal,
             lineWidth: 1,
             lastValueVisible: false,
             priceLineVisible: false
@@ -139,8 +144,12 @@ window.IndicatorRenderers = (function() {
             if (addLog) addLog('ATR: calcATR function not found');
             return;
         }
+        const colorFast = '#ffb347';
+        const colorSlow = '#8ec5ff';
+        const fastPeriodValue = params.atrFastPeriod || params.atrPeriod;
+        const slowPeriodValue = params.atrSlowPeriod || params.atrSmoothPeriod;
         const labelEl = document.getElementById('chart-label-ATR');
-        if (labelEl) labelEl.innerHTML = 'ATR &nbsp;<span style="color:#ffb347">fast=' + (params.atrFastPeriod || params.atrPeriod || 14) + '</span>&nbsp; <span style="color:#8ec5ff">slow=' + (params.atrSlowPeriod || params.atrSmoothPeriod || 28) + '</span>';
+        if (labelEl) labelEl.innerHTML = 'ATR &nbsp;<span style="color:' + colorFast + '">fast=' + fastPeriodValue + '</span>&nbsp; <span style="color:' + colorSlow + '">slow=' + slowPeriodValue + '</span>';
 
         pane.chart.applyOptions({
             rightPriceScale: {
@@ -158,11 +167,11 @@ window.IndicatorRenderers = (function() {
 
         const useAtrSettings = !!(params && params.useATR);
         const fastPeriod = useAtrSettings
-            ? Math.max(2, Number(params.atrFastPeriod || params.atrPeriod || 14))
-            : 14;
+            ? Math.max(2, Number(params.atrFastPeriod || params.atrPeriod))
+            : Math.max(2, Number(params.atrFastPeriod || params.atrPeriod));
         const slowPeriod = useAtrSettings
-            ? Math.max(2, Number(params.atrSlowPeriod || params.atrSmoothPeriod || 28))
-            : 28;
+            ? Math.max(2, Number(params.atrSlowPeriod || params.atrSmoothPeriod))
+            : Math.max(2, Number(params.atrSlowPeriod || params.atrSmoothPeriod));
 
         const atrFastData = window.calcATR(data, fastPeriod, 1);
         const atrSlowData = window.calcATR(data, slowPeriod, 1);
@@ -199,7 +208,7 @@ window.IndicatorRenderers = (function() {
         const minMove = Math.pow(10, -precision);
 
         const fastLine = pane.chart.addSeries(LightweightCharts.LineSeries, {
-            color: '#ffb347',
+            color: colorFast,
             lineWidth: 2,
             lastValueVisible: false,
             priceLineVisible: false,
@@ -212,7 +221,7 @@ window.IndicatorRenderers = (function() {
         fastLine.setData(data.map((c, i) => ({ time: c.time, value: atrFastView[i] })));
 
         const slowLine = pane.chart.addSeries(LightweightCharts.LineSeries, {
-            color: '#8ec5ff',
+            color: colorSlow,
             lineWidth: 2,
             lastValueVisible: false,
             priceLineVisible: false,
@@ -229,10 +238,11 @@ window.IndicatorRenderers = (function() {
     function renderSMA(data, params, chartMain, mainSeriesRefs, LightweightCharts) {
         removeMainSeries('SMA', chartMain, mainSeriesRefs);
         mainSeriesRefs.SMA = [];
-        const period = Math.max(2, Number(params.smaPeriod || 200));
+        const period = Math.max(2, Number(params.smaPeriod));
+        const smaColor = 'rgba(255,152,0,0.8)';
         const smaData = window.calcSMA(data, period);
         const s = chartMain.addSeries(LightweightCharts.LineSeries, {
-            color: 'rgba(255,152,0,0.8)',
+            color: smaColor,
             lineWidth: 1,
             lastValueVisible: false,
             priceLineVisible: false

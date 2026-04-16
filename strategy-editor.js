@@ -919,9 +919,10 @@
             '',
             '    function buildSignalsEvaluator(source) {',
             "        const logicBody = String(source || '').trim();",
-            '        if (!logicBody) { return function() { return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 }; }; }',
-            '        const fullCode = "const c = arguments[0].c; const i = arguments[0].i; const t = arguments[0].t; let phaseSignal = 0, entrySignal = 0, trendSignal = 0, validSignal = 0, resultSignal = 0; " + logicBody + " return { phase: phaseSignal, entry: entrySignal, trend: trendSignal, valid: validSignal, result: resultSignal };";',
-            '        const compiled = new Function(fullCode);',
+            '        if (!logicBody) {',
+            '            return function() { return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 }; };',
+            '        }',
+            '        const compiled = new Function("c", "i", "t", logicBody + " return { phase: phaseSignal, entry: entrySignal, trend: trendSignal, valid: validSignal, result: resultSignal };");',
             '        return function(ctx) {',
             '            if (!ctx) return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };',
             '            try {',
@@ -929,16 +930,16 @@
             '                const i = ctx.i || {};',
             '                const t = typeof ctx.t === "function" ? ctx.t : null;',
             '                if (!c || !i) return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };',
-            '                const result = compiled.call(null, { c, i, t });',
+            '                const result = compiled.call(null, c, i, t);',
             '                return {',
-            '                    phase:  Number.isFinite(result.phase)  ? result.phase  : 0,',
-            '                    entry:  Number.isFinite(result.entry)  ? result.entry  : 0,',
-            '                    trend:  Number.isFinite(result.trend)  ? result.trend  : 0,',
-            '                    valid:  Number.isFinite(result.valid)  ? result.valid  : 0,',
+            '                    phase: Number.isFinite(result.phase) ? result.phase : 0,',
+            '                    entry: Number.isFinite(result.entry) ? result.entry : 0,',
+            '                    trend: Number.isFinite(result.trend) ? result.trend : 0,',
+            '                    valid: Number.isFinite(result.valid) ? result.valid : 0,',
             '                    result: Number.isFinite(result.result) ? result.result : 0',
             '                };',
             '            } catch (err) {',
-            '                console.error("Signals evaluation error:", err.message);',
+            '                console.error("Signals eval error:", err.message, err.stack);',
             '                return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };',
             '            }',
             '        };',
@@ -1160,9 +1161,6 @@
 
                 syncIndicatorSelectionFromStrategyParams();
                 rerunStrategyPreview();
-                if (typeof window.updatePaneLabels === 'function') {
-                    window.updatePaneLabels();
-                }
                 return true;
             };
 

@@ -105,7 +105,7 @@ window.StrategyCoreSignals = (function() {
 
     function findCloseIndex(data, entryIndex, closeTime) {
         for (let i = entryIndex; i < data.length; i++) {
-            if (data[i].time >= closeTime) {
+            if (data[i].time > closeTime) {
                 return i;
             }
         }
@@ -191,6 +191,8 @@ window.StrategyCoreSignals = (function() {
 
         const signals = [];
         const expirationSeconds = (resolvedParams.expirationMinutes || 5) * 60;
+        const minEntryIntervalMultiplier = Math.max(0, Number(resolvedParams.minEntryIntervalMultiplier) || 0);
+        const minEntryIntervalSeconds = expirationSeconds * minEntryIntervalMultiplier;
         const timeIndexMap = createTimeIndexMap(normalizedData);
 
         // Инкрементальная история сделок: вместо пересчёта с нуля на каждой свече
@@ -218,24 +220,29 @@ window.StrategyCoreSignals = (function() {
             const currentTime = normalizedData[i].time;
             while (nextUncheckedSignal < signals.length) {
                 const signal = signals[nextUncheckedSignal];
-                const entryIndex = timeIndexMap.get(signal.time);
+                const actualEntryTime = signal.entryTime !== undefined ? signal.entryTime : signal.time;
+                const entryIndex = timeIndexMap.get(actualEntryTime);
                 if (entryIndex === undefined) {
                     nextUncheckedSignal++;
                     continue;
                 }
-                const closeTime = signal.time + expirationSeconds;
+                const closeTime = actualEntryTime + expirationSeconds;
                 const closeIndex = findCloseIndex(normalizedData, entryIndex, closeTime);
                 const closeCandle = normalizedData[closeIndex];
-                if (!closeCandle || closeCandle.time >= currentTime) {
-                    break; // эта и все последующие сделки ещё не закрыты
+                if (!closeCandle || closeCandle.time > currentTime) {
+                    break;
                 }
                 const isWin = signal.type === 'buy'
                     ? closeCandle.c > signal.price
                     : closeCandle.c < signal.price;
                 
-                const trade = createTradeObject(signal.type, signal.time, closeCandle.time, entryIndex, closeIndex, normalizedData, signal.stake || 0);
+                const trade = createTradeObject(signal.type, actualEntryTime, closeCandle.time, entryIndex, closeIndex, normalizedData, signal.stake || 0);
                 trade.win = isWin ? 'win' : 'loss';
-                trade.result = trade.win; // для совместимости
+                trade.result = trade.win;
+                
+                signal.tradeResult = trade.result;
+                signal.closeTime = closeCandle.time;
+                signal.closePrice = closeCandle.c;
                 
                 closedTradeHistory.push(trade);
                 nextUncheckedSignal++;
@@ -245,7 +252,6 @@ window.StrategyCoreSignals = (function() {
             const context = contextModule.createConditionContext(i, normalizedData, resolvedIndicators, mergedTradeHistory, resolvedParams);
             const runtimeContext = createRuntimeContext(context);
 
-            // Вычислить сигналы (Signals) и передать в Code как ctx.s
             if (evaluateSignalsForEntry) {
                 try {
                     const sv = evaluateSignalsForEntry(runtimeContext);
@@ -279,30 +285,40 @@ window.StrategyCoreSignals = (function() {
             const buy = result && Number.isFinite(result.buy) ? result.buy : 0;
             const sell = result && Number.isFinite(result.sell) ? result.sell : 0;
 
-            // Вход — с открытием следующей свечи (i+1)
+            const signalCandle = normalizedData[i];
             const entryCandle = normalizedData[i + 1];
-            if (!entryCandle) continue;
+            if (!signalCandle || !entryCandle) continue;
+
+            const lastSignal = signals.length ? signals[signals.length - 1] : null;
+            const isEntryIntervalAllowed = !lastSignal || minEntryIntervalSeconds <= 0
+                ? true
+                : (entryCandle.time - lastSignal.time) >= minEntryIntervalSeconds;
+
+            if (!isEntryIntervalAllowed) {
+                continue;
+            }
 
             if (buy >= 1) {
                 signals.push({
-                    time: entryCandle.time,
+                    time: signalCandle.time,
+                    entryTime: entryCandle.time,
                     type: 'buy',
                     price: entryCandle.o,
                     buyStrength: buy,
                     sellStrength: 0,
-                    stake: buy  // Размер позиции = величина сигнала
+                    stake: buy
                 });
             } else if (sell >= 1) {
                 signals.push({
-                    time: entryCandle.time,
+                    time: signalCandle.time,
+                    entryTime: entryCandle.time,
                     type: 'sell',
                     price: entryCandle.o,
                     buyStrength: 0,
                     sellStrength: sell,
-                    stake: sell  // Размер позиции = величина сигнала
+                    stake: sell
                 });
             }
-
         }
 
         contextModule.log(`Signal calculation complete: ${signals.length} signals in ${Date.now() - startTime}ms`);

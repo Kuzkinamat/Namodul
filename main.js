@@ -424,7 +424,7 @@ function renderSignalsPane(data, signalPaneData) {
     const macdColor   = '#2196f3';                    // MACD — синий
     const validColor  = 'rgba(156,39,176,0.85)';      // Valid — фиолетовый
     const resultColor = 'rgba(200,200,200,0.85)';     // Result — светло-серый
-    const trendColor  = 'rgba(255,152,0,0.85)';       // SMA тренд — оранжевый
+    const trendColor  = '#FFD700';                     // Trend — желтый
 
     // BB верхняя граница флета (teal пунктир)
     // сходится к 0 вне нужной фазы, расходится до +0.5 в нужной фазе
@@ -454,20 +454,6 @@ function renderSignalsPane(data, signalPaneData) {
     botBand.setData(signalPaneData.map(p => ({ time: p.time, value: -p.phase * 0.5 })));
     pane.series.push(botBand);
 
-    // Phase зеркально от -1 до +1 (teal сплошная толстая линия)
-    const phaseMirror = pane.chart.addSeries(LightweightCharts.LineSeries, {
-        color: bbColor,
-        lineWidth: 2,
-        lineStyle: LightweightCharts.LineStyle.Solid,
-        lastValueVisible: false,
-        priceLineVisible: false,
-        crosshairMarkerVisible: false,
-        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
-    });
-    // Трансформируем phase (0..1) в зеркальный диапазон (-1..+1)
-    phaseMirror.setData(signalPaneData.map(p => ({ time: p.time, value: (p.phase - 0.5) * 2 })));
-    pane.series.push(phaseMirror);
-
     // MACD нормализованный (синий)
     const macdSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
         color: macdColor,
@@ -480,7 +466,7 @@ function renderSignalsPane(data, signalPaneData) {
     macdSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.entry === 'number' ? p.entry : 0 })));
     pane.series.push(macdSeries);
 
-    // Тренд SMA200 (оранжевый)
+    // Trend (тонкая жёлтая линия)
     const trendSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
         color: trendColor,
         lineWidth: 1,
@@ -492,10 +478,10 @@ function renderSignalsPane(data, signalPaneData) {
     trendSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.trend === 'number' ? p.trend : 0 })));
     pane.series.push(trendSeries);
 
-    // Valid (фиолетовый)
+    // Valid (тонкий фиолетовый)
     const validSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
         color: validColor,
-        lineWidth: 2,
+        lineWidth: 1,
         lastValueVisible: false,
         priceLineVisible: false,
         crosshairMarkerVisible: false,
@@ -517,7 +503,7 @@ function renderSignalsPane(data, signalPaneData) {
     pane.series.push(resultSeries);
 
     const labelEl = document.getElementById('chart-label-Signals');
-    if (labelEl) labelEl.innerHTML = '<span style="color:#5d606b">Signals</span>&nbsp;<span style="color:rgba(38,166,154,0.9)">Phase</span>&nbsp;<span style="color:#2196f3">Entry</span>&nbsp;<span style="color:rgba(255,152,0,0.85)">Trend</span>&nbsp;<span style="color:rgba(156,39,176,0.85)">Valid</span>&nbsp;<span style="color:rgba(200,200,200,0.85)">Result</span>';
+    if (labelEl) labelEl.innerHTML = '<span style="color:#5d606b">Signals</span>&nbsp;<span style="color:rgba(38,166,154,0.9)">Phase</span>&nbsp;<span style="color:#2196f3">Entry</span>&nbsp;<span style="color:#FFD700">Trend</span>&nbsp;<span style="color:rgba(156,39,176,0.85)">Valid</span>&nbsp;<span style="color:rgba(200,200,200,0.85)">Result</span>';
 
     // Sync time scale with main chart
     const mainTimeScale = window.chartMain.timeScale();
@@ -542,6 +528,37 @@ function renderBalancePane(balancePaneData) {
     const mainRange = chartMain.timeScale().getVisibleLogicalRange();
     applyLogicalRangeSilently(pane.chart, mainRange);
     window.onresize();
+    syncAll(chartMain);
+}
+
+function renderProgressPane(currentIndex, totalCount, data) {
+    const pane = ensureBalancePane();
+
+    pane.series.forEach(series => pane.chart.removeSeries(series));
+    pane.series = [];
+
+    // Линия прогресса: растёт линейно от 0 до 100 за весь диапазон данных
+    const progressData = [];
+    const progress = (currentIndex / Math.max(1, totalCount)) * 100;
+    for (let i = 0; i < data.length; i++) {
+        const pct = (i / Math.max(1, data.length)) * 100;
+        progressData.push({
+            time: data[i].time,
+            value: Math.min(pct, progress) // растёт до текущего прогресса
+        });
+    }
+
+    const progressSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: '#4CAF50',
+        lineWidth: 2,
+        lastValueVisible: false,
+        priceLineVisible: false
+    });
+    progressSeries.setData(progressData);
+    pane.series.push(progressSeries);
+
+    const mainRange = chartMain.timeScale().getVisibleLogicalRange();
+    applyLogicalRangeSilently(pane.chart, mainRange);
     syncAll(chartMain);
 }
 
@@ -767,21 +784,6 @@ function updateMainChartLabel() {
 
 window.updatePaneLabels = function() {
     updateMainChartLabel();
-    const params = { ...(window.StrategyCore?.getDefaultParams?.() || {}), ...(window.Strategy?.params || {}) };
-    if (window.IndicatorRenderers && typeof window.IndicatorRenderers.setPaneLabel === 'function') {
-        if (activePanes.Stochastic) {
-            const k = params.stochasticK || 14;
-            const d = params.stochasticD || 3;
-            const sl = params.stochasticSlowing || 3;
-            window.IndicatorRenderers.setPaneLabel('Stochastic', 'Stochastic  K=' + k + '  D=' + d + '  slowing=' + sl);
-        }
-        if (activePanes.MACD) {
-            window.IndicatorRenderers.setPaneLabel('MACD', 'MACD  fast=' + (params.macdFast || 12) + '  slow=' + (params.macdSlow || 26) + '  signal=' + (params.macdSignal || 9));
-        }
-        if (activePanes.ATR) {
-            window.IndicatorRenderers.setPaneLabel('ATR', 'ATR  fast=' + (params.atrFastPeriod || params.atrPeriod || 14) + '  slow=' + (params.atrSlowPeriod || params.atrSmoothPeriod || 28));
-        }
-    }
 };
 
 function updateIndicatorValues(options = {}) {
