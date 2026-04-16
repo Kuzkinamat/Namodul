@@ -422,10 +422,12 @@ function renderSignalsPane(data, signalPaneData) {
 
     const bbColor     = 'rgba(38,166,154,0.9)';      // BB-границы флета — teal
     const macdColor   = '#2196f3';                    // MACD — синий
-    const signalColor = 'rgba(200,200,200,0.85)';     // результирующий — светло-серый
+    const validColor  = 'rgba(156,39,176,0.85)';      // Valid — фиолетовый
+    const resultColor = 'rgba(200,200,200,0.85)';     // Result — светло-серый
     const trendColor  = 'rgba(255,152,0,0.85)';       // SMA тренд — оранжевый
 
-    // BB верхняя граница флета (+value, тeal пунктир)
+    // BB верхняя граница флета (teal пунктир)
+    // сходится к 0 вне нужной фазы, расходится до +0.5 в нужной фазе
     const topBand = pane.chart.addSeries(LightweightCharts.LineSeries, {
         color: bbColor,
         lineWidth: 1,
@@ -435,11 +437,11 @@ function renderSignalsPane(data, signalPaneData) {
         crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
     });
-    // value=1 во флете → рисуем на ±0.5 (масштабируем *0.5)
-    topBand.setData(signalPaneData.map(p => ({ time: p.time, value: p.value * 0.5 })));
+    // phaseSignal * 0.5: сходится к 0, расходится до +0.5
+    topBand.setData(signalPaneData.map(p => ({ time: p.time, value: p.phase * 0.5 })));
     pane.series.push(topBand);
 
-    // BB нижняя граница флета (-value*0.5, зеркальная)
+    // BB нижняя граница флета (teal пунктир, зеркальная)
     const botBand = pane.chart.addSeries(LightweightCharts.LineSeries, {
         color: bbColor,
         lineWidth: 1,
@@ -449,8 +451,22 @@ function renderSignalsPane(data, signalPaneData) {
         crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
     });
-    botBand.setData(signalPaneData.map(p => ({ time: p.time, value: -p.value * 0.5 })));
+    botBand.setData(signalPaneData.map(p => ({ time: p.time, value: -p.phase * 0.5 })));
     pane.series.push(botBand);
+
+    // Phase зеркально от -1 до +1 (teal сплошная толстая линия)
+    const phaseMirror = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: bbColor,
+        lineWidth: 2,
+        lineStyle: LightweightCharts.LineStyle.Solid,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
+    });
+    // Трансформируем phase (0..1) в зеркальный диапазон (-1..+1)
+    phaseMirror.setData(signalPaneData.map(p => ({ time: p.time, value: (p.phase - 0.5) * 2 })));
+    pane.series.push(phaseMirror);
 
     // MACD нормализованный (синий)
     const macdSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
@@ -461,7 +477,7 @@ function renderSignalsPane(data, signalPaneData) {
         crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
     });
-    macdSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.value2 === 'number' ? p.value2 : 0 })));
+    macdSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.entry === 'number' ? p.entry : 0 })));
     pane.series.push(macdSeries);
 
     // Тренд SMA200 (оранжевый)
@@ -473,23 +489,35 @@ function renderSignalsPane(data, signalPaneData) {
         crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
     });
-    trendSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.trend === 'number' ? p.trend * 0.5 : 0 })));
+    trendSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.trend === 'number' ? p.trend : 0 })));
     pane.series.push(trendSeries);
 
-    // Результирующий Signal (светло-серый)
-    const compositeSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
-        color: signalColor,
+    // Valid (фиолетовый)
+    const validSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: validColor,
         lineWidth: 2,
         lastValueVisible: false,
         priceLineVisible: false,
         crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
     });
-    compositeSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.composite === 'number' ? p.composite : 0 })));
-    pane.series.push(compositeSeries);
+    validSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.valid === 'number' ? p.valid : 0 })));
+    pane.series.push(validSeries);
+
+    // Result (светло-серый)
+    const resultSeries = pane.chart.addSeries(LightweightCharts.LineSeries, {
+        color: resultColor,
+        lineWidth: 2,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
+    });
+    resultSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.result === 'number' ? p.result : 0 })));
+    pane.series.push(resultSeries);
 
     const labelEl = document.getElementById('chart-label-Signals');
-    if (labelEl) labelEl.innerHTML = '<span style="color:#5d606b">Signals</span>&nbsp;<span style="color:rgba(38,166,154,0.9)">Flat</span>&nbsp;<span style="color:#2196f3">Momentum</span>&nbsp;<span style="color:rgba(255,152,0,0.85)">Trend</span>&nbsp;<span style="color:rgba(200,200,200,0.85)">Result</span>';
+    if (labelEl) labelEl.innerHTML = '<span style="color:#5d606b">Signals</span>&nbsp;<span style="color:rgba(38,166,154,0.9)">Phase</span>&nbsp;<span style="color:#2196f3">Entry</span>&nbsp;<span style="color:rgba(255,152,0,0.85)">Trend</span>&nbsp;<span style="color:rgba(156,39,176,0.85)">Valid</span>&nbsp;<span style="color:rgba(200,200,200,0.85)">Result</span>';
 
     // Sync time scale with main chart
     const mainTimeScale = window.chartMain.timeScale();

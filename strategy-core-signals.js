@@ -253,13 +253,14 @@ window.StrategyCoreSignals = (function() {
                         phase: sv && Number.isFinite(sv.phase) ? sv.phase : 0,
                         entry: sv && Number.isFinite(sv.entry) ? sv.entry : 0,
                         trend: sv && Number.isFinite(sv.trend) ? sv.trend : 0,
-                        valid: sv && Number.isFinite(sv.valid) ? sv.valid : 0
+                        valid: sv && Number.isFinite(sv.valid) ? sv.valid : 0,
+                        result: sv && Number.isFinite(sv.result) ? sv.result : 0
                     };
                 } catch (e) {
-                    runtimeContext.s = { phase: 0, entry: 0, trend: 0, valid: 0 };
+                    runtimeContext.s = { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };
                 }
             } else {
-                runtimeContext.s = { phase: 0, entry: 0, trend: 0, valid: 0 };
+                runtimeContext.s = { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };
             }
 
             let result;
@@ -352,17 +353,19 @@ window.StrategyCoreSignals = (function() {
         for (let i = 1; i < normalizedData.length; i++) {
             const context = contextModule.createConditionContext(i, normalizedData, resolvedIndicators, [], resolvedParams);
             const runtimeContext = createRuntimeContext(context);
-            let val = 0, val2 = 0, val3 = 0, val4 = 0;
+            
+            let val = 0, val2 = 0, val3 = 0, val4 = 0, resultVal = 0;
             try {
                 const r = evaluateSignals(runtimeContext);
                 val  = r && Number.isFinite(r.phase) ? r.phase : 0;
                 val2 = r && Number.isFinite(r.entry) ? r.entry : 0;
-                val3 = r && Number.isFinite(r.valid) ? r.valid : 0;
-                val4 = r && Number.isFinite(r.trend) ? r.trend : 0;
+                val3 = r && Number.isFinite(r.trend) ? r.trend : 0;
+                val4 = r && Number.isFinite(r.valid) ? r.valid : 0;
+                resultVal = r && Number.isFinite(r.result) ? r.result : 0;
             } catch (err) {
                 // skip
             }
-            result.push({ time: normalizedData[i].time, value: val, value2: val2, composite: val3, trend: val4 });
+            result.push({ time: normalizedData[i].time, phase: val, entry: val2, trend: val3, valid: val4, result: resultVal });
         }
 
         return result;

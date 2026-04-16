@@ -82,21 +82,19 @@ window.StrategyDefinition = (function() {
 // s.entry = Точка входа (-1..+1, краткосрочный сигнал)
 // s.trend = Долгосрочный тренд (-1..+1)
 // s.valid = Валидный сигнал (составляющий)
+// s.result = Результирующий сигнал (для входа)
 
 // Округление до 0.1
 function roundTo01(val) {
     return Math.round(val * 10) / 10;
 }
 
-// Вычисляем итоговый result вручную на основе промежуточных сигналов
-const result = s.valid; // Временно используем valid, потом настроите свою формулу
-
-// Вход только по величине итогового result
-if (result >= 1) {
-    buy = roundTo01(result);
+// Вход по величине результирующего сигнала
+if (s.result >= 1) {
+    buy = roundTo01(s.result);
 }
-if (result <= -1) {
-    sell = roundTo01(Math.abs(result));
+if (s.result <= -1) {
+    sell = roundTo01(Math.abs(s.result));
 }
 `;
 
@@ -105,57 +103,69 @@ if (result <= -1) {
     function buildSignalsEvaluator(source) {
         const logicBody = String(source || '').trim();
         if (!logicBody) {
-            return function() { return { phase: 0, entry: 0, trend: 0, valid: 0 }; };
+            return function() { return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 }; };
         }
         // Компилируем код сигналов
-        const compiled = new Function('c', 'i', 't', logicBody + ' return { phase: phaseSignal, entry: entrySignal, trend: trendSignal, valid: validSignal };');
+        const compiled = new Function('c', 'i', 't', logicBody + ' return { phase: phaseSignal, entry: entrySignal, trend: trendSignal, valid: validSignal, result: resultSignal };');
         return function(ctx) {
-            if (!ctx) return { phase: 0, entry: 0, trend: 0, valid: 0 };
+            if (!ctx) return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };
             try {
                 const c = typeof ctx.c === 'function' ? ctx.c : null;
                 const i = ctx.i || {};
                 const t = typeof ctx.t === 'function' ? ctx.t : null;
-                if (!c || !i) return { phase: 0, entry: 0, trend: 0, valid: 0 };
+                if (!c || !i) return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };
                 const result = compiled.call(null, c, i, t);
                 return {
                     phase: Number.isFinite(result.phase) ? result.phase : 0,
                     entry: Number.isFinite(result.entry) ? result.entry : 0,
                     trend: Number.isFinite(result.trend) ? result.trend : 0,
-                    valid: Number.isFinite(result.valid) ? result.valid : 0
+                    valid: Number.isFinite(result.valid) ? result.valid : 0,
+                    result: Number.isFinite(result.result) ? result.result : 0
                 };
             } catch (err) {
                 console.error('Signals eval error:', err.message, err.stack);
-                return { phase: 0, entry: 0, trend: 0, valid: 0 };
+                return { phase: 0, entry: 0, trend: 0, valid: 0, result: 0 };
             }
         };
     }
 
     const signalsSource = `
 // === НОВЫЕ ИМЕНА СИГНАЛОВ ===
-// phaseSignal → s.phase (фаза рынка: 0..1, флэт/движение)
-// entrySignal → s.entry (точка входа: -1..+1, краткосрочный)
-// trendSignal → s.trend (долгосрочный тренд: -1..+1)
-// validSignal → s.valid (валидный составляющий сигнал)
+// phaseSignal → s.phase (фаза рынка: 0..1, разрешающий множитель)
+//   рассчитывается как ratio между текущей шириной BB и максимальной шириной за окно
+//   - узкий диапазон BB (флет/шум) → relBw близко к 0 → phaseSignal близко к 0 (сигналы не усилены)
+//   - широкий диапазон BB (тренд) → relBw близко к 1 → phaseSignal близко к 1 (сигналы усилены)
+//   дублируется в отрицательную область для визуализации 2 зеркальных линий:
+//     - верхняя: +phase * 0.5
+//     - нижняя: -phase * 0.5
+//   + центральная толстая линия от -1 до +1 для индикации разрешения (0 = закрыто, ±1 = открыто)
+// entrySignal → s.entry (точка входа: -1..+1, направленный краткосрочный сигнал)
+// trendSignal → s.trend (долгосрочный тренд: -1..+1, направленный)
+// validSignal → s.valid (пока не используется в result, но вычисляется)
+// resultSignal → s.result = ((entry*wEntry + trend*wTrend + valid*wValid) × phase)
 
 // Инициализация переменных сигналов
 let phaseSignal = 0;
 let entrySignal = 0;
 let trendSignal = 0;
 let validSignal = 0;
+let resultSignal = 0;
 
-// === Множители для сигналов ===
-const wPhase = 1.0;   // Множитель для фазы рынка
+// === Множители для сигналов (только для направленных компонент) ===
 const wEntry = 1.0;   // Множитель для точки входа
 const wTrend = 1.0;   // Множитель для тренда
+const wValid = 1.0;   // Множитель для валидного сигнала
 
 // Проверка доступности функций - если функций нет, переменные останутся 0
 if (typeof i.bb === 'function' && typeof i.macd === 'function' && typeof c === 'function') {
 
 // --- Флэт (узкий диапазон BB) ---
+// phaseSignal = плавная функция 0..1 (модулятор)
+// используется для умножения на направленные сигналы
 const bb0 = i.bb(0);
 if (bb0 && bb0.m > 0) {
     const bwNorm = (bb0.u - bb0.l) / bb0.m;
-    const WINDOW = 50;
+    const WINDOW = 200;  // Долгосрочный максимум за 200 свечей
     let maxBw = bwNorm;
     for (let lag = 1; lag < WINDOW; lag++) {
         const b = i.bb(-lag);
@@ -164,13 +174,11 @@ if (bb0 && bb0.m > 0) {
             if (bw > maxBw) maxBw = bw;
         }
     }
-    const relBw = maxBw > 0 ? bwNorm / maxBw : 1;
-    // Плавная функция: пик при relBw=0.5, спад к краям
-    // Используем колоколообразную функцию
-    const center = 0.5;
-    const width = 0.4;  // ширина "колокола"
-    const distance = Math.abs(relBw - center);
-    phaseSignal = distance < width ? (1 - (distance / width)) : 0;
+    let relBw = maxBw > 0 ? bwNorm / maxBw : 1;
+    // Сглаживание relBw: округляем до 0.05 (20 квантов) для плавных переходов без скачков
+    relBw = Math.round(relBw * 20) / 20;
+    // phaseSignal = relBw напрямую (0..1)
+    phaseSignal = relBw;
 }
 
 // --- MACD: два сигнала ---
@@ -199,8 +207,12 @@ if (mac0 && mac0.histogram !== null && mac0.histogram !== undefined) {
     // --- Тренд (пока заглушка, настроите позже) ---
     trendSignal = 0;
 
-    // --- Валидный сигнал (взвешенная сумма) ---
-    validSignal = (phaseSignal * wPhase) + (entrySignal * wEntry) + (trendSignal * wTrend);
+    // --- Валидный сигнал (пока не используем, но вычисляем для логирования) ---
+    validSignal = (entrySignal * wEntry) + (trendSignal * wTrend);
+
+    // --- Результирующий сигнал (три компоненты, модулированы фазой) ---
+    // result = ((entry × wEntry) + (trend × wTrend) + (valid × wValid)) × phase
+    resultSignal = ((entrySignal * wEntry) + (trendSignal * wTrend) + (validSignal * wValid)) * phaseSignal;
 }
 `;
 
