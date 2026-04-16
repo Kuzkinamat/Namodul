@@ -26,7 +26,7 @@ window.StrategyCoreIndicators = (function() {
 
         const requestedOnly = options && Array.isArray(options.only) ? options.only : null;
         const shouldCalcSMA = (options && options.forceAll) ||
-            (requestedOnly ? requestedOnly.includes('sma') : resolvedParams.useSMA === true);
+            (requestedOnly ? requestedOnly.includes('sma') : resolvedParams.useSMA !== false);
         const shouldCalcBB = (options && options.forceAll) ||
             (requestedOnly ? requestedOnly.includes('bb') : resolvedParams.useBB !== false);
         const shouldCalcMACD = (options && options.forceAll) ||

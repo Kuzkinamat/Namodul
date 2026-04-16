@@ -5,7 +5,7 @@ let data = [];
 window.data = data; // expose globally
 let MARKER_TIMESTAMPS = [];
 window.MARKER_TIMESTAMPS = MARKER_TIMESTAMPS; // экспорт для strategy.js
-let currentRange = '3M', currentTimeframe = '5m', currentSource = 'none', currentPair = '', curM = 0, isSyncing = false;
+let currentRange = '3M', currentTimeframe = '5m', currentSource = 'none', currentPair = '', curM = 0, isSyncing = false, isApplyingProgrammaticRange = false;
 window.curM = curM; // экспорт для strategy.js
 const activePanes = {}, mainSeriesRefs = {};
 
@@ -62,6 +62,79 @@ window.DataUtils = {
         return intervalMap[timeframe] || '1day';
     }
 };
+
+function getInitialViewportCandleCount(timeframe) {
+    const timeframeMinutes = window.DataUtils?.TIMEFRAME_MINUTES?.[timeframe];
+    if (!Number.isFinite(timeframeMinutes) || timeframeMinutes <= 0) {
+        return 288;
+    }
+    return Math.max(2, Math.ceil((24 * 60) / timeframeMinutes));
+}
+
+function applyInitialViewport() {
+    if (!Array.isArray(data) || data.length === 0) {
+        return;
+    }
+
+    const visibleCandles = Math.min(data.length, getInitialViewportCandleCount(currentTimeframe));
+    const to = Math.max(0, data.length - 1);
+    const from = Math.max(0, to - visibleCandles + 1);
+    chartMain.timeScale().setVisibleLogicalRange({ from, to });
+}
+
+function applyLogicalRangeSilently(chart, range) {
+    if (!chart || !range) {
+        return;
+    }
+
+    isApplyingProgrammaticRange = true;
+    try {
+        chart.timeScale().setVisibleLogicalRange(range);
+    } finally {
+        isApplyingProgrammaticRange = false;
+    }
+}
+
+function captureViewportState() {
+    const logicalRange = chartMain.timeScale().getVisibleLogicalRange();
+    if (!logicalRange) {
+        return null;
+    }
+
+    return {
+        logicalRange: {
+            from: logicalRange.from,
+            to: logicalRange.to
+        }
+    };
+}
+
+function restoreViewportState(state) {
+    const range = state && state.logicalRange;
+    if (!range) {
+        return;
+    }
+
+    applyLogicalRangeSilently(chartMain, range);
+    syncAll(chartMain);
+}
+
+window.captureViewportState = captureViewportState;
+window.restoreViewportState = restoreViewportState;
+
+function setIndicatorCheckboxState(id, isChecked) {
+    const checkbox = document.querySelector('#indicator-menu input[data-id="' + id + '"]');
+    if (checkbox) {
+        checkbox.checked = isChecked === true;
+    }
+}
+
+function initializeStartupPanels() {
+    setIndicatorCheckboxState('Worktime', true);
+    if (typeof window.setWorktimeOverlayVisible === 'function') {
+        window.setWorktimeOverlayVisible(true);
+    }
+}
 
 
 
@@ -400,7 +473,7 @@ function renderSignalsPane(data, signalPaneData) {
         crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => ({ priceRange: { minValue: -1, maxValue: 1 } })
     });
-    trendSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.sma === 'number' ? p.sma * 0.5 : 0 })));
+    trendSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.trend === 'number' ? p.trend * 0.5 : 0 })));
     pane.series.push(trendSeries);
 
     // Результирующий Signal (светло-серый)
@@ -415,16 +488,12 @@ function renderSignalsPane(data, signalPaneData) {
     compositeSeries.setData(signalPaneData.map(p => ({ time: p.time, value: typeof p.composite === 'number' ? p.composite : 0 })));
     pane.series.push(compositeSeries);
 
-    const flatCount  = signalPaneData.filter(p => p.value !== 0).length;
-    const macdCount  = signalPaneData.filter(p => p.value2 !== 0).length;
-    const sigCount   = signalPaneData.filter(p => p.composite !== 0).length;
-    const smaAbove   = signalPaneData.filter(p => p.sma > 0).length;
     const labelEl = document.getElementById('chart-label-Signals');
-    if (labelEl) labelEl.innerHTML = `<span style="color:#5d606b">Signals</span>&nbsp;<span style="color:rgba(38,166,154,0.9)">BB:${flatCount}</span>&nbsp;<span style="color:#2196f3">MACD:${macdCount}</span>&nbsp;<span style="color:rgba(255,152,0,0.85)">SMA:${smaAbove}↑/${signalPaneData.length - smaAbove}↓</span>&nbsp;<span style="color:rgba(200,200,200,0.85)">Result:${sigCount}</span>`;
+    if (labelEl) labelEl.innerHTML = '<span style="color:#5d606b">Signals</span>&nbsp;<span style="color:rgba(38,166,154,0.9)">Flat</span>&nbsp;<span style="color:#2196f3">Momentum</span>&nbsp;<span style="color:rgba(255,152,0,0.85)">Trend</span>&nbsp;<span style="color:rgba(200,200,200,0.85)">Result</span>';
 
     // Sync time scale with main chart
     const mainTimeScale = window.chartMain.timeScale();
-    pane.chart.timeScale().setVisibleLogicalRange(mainTimeScale.getVisibleLogicalRange());
+    applyLogicalRangeSilently(pane.chart, mainTimeScale.getVisibleLogicalRange());
 }
 
 function renderBalancePane(balancePaneData) {
@@ -442,7 +511,8 @@ function renderBalancePane(balancePaneData) {
     balanceSeries.setData(balancePaneData);
     pane.series.push(balanceSeries);
 
-    pane.chart.timeScale().fitContent();
+    const mainRange = chartMain.timeScale().getVisibleLogicalRange();
+    applyLogicalRangeSilently(pane.chart, mainRange);
     window.onresize();
     syncAll(chartMain);
 }
@@ -475,9 +545,9 @@ async function autoRunSelectedStrategy(options = {}) {
 
             if (options.enableBalance === true && !hasAutoEnabledBalanceOnFirstOpen) {
                 hasAutoEnabledBalanceOnFirstOpen = true;
-                addLog('Start ...');
+                addLog('Start strategy...');
             } else if (options.logSuccess === true) {
-                addLog('Restart ...');
+                addLog('Restart strategy...');
             }
 
             return;
@@ -625,7 +695,7 @@ window.setPair = async (p) => {
         }
         window.data = data;
         candleSeries.setData(data);
-        chartMain.timeScale().fitContent();
+        applyInitialViewport();
         scheduleMainSessionBackgroundDraw();
         // Очистить маркеры сигналов
         if (window.Strategy && window.chartMain && window.candleSeries) {
@@ -643,8 +713,8 @@ window.setPair = async (p) => {
         });
         updateIndicatorValues();
 
-        // Re-apply full-range viewport after indicator refresh/sync side effects.
-        chartMain.timeScale().fitContent();
+        // Re-apply startup viewport after indicator refresh/sync side effects.
+        applyInitialViewport();
 
         scheduleAutoRunSelectedStrategy({
             enableBalance: !hasAutoEnabledBalanceOnFirstOpen,
@@ -801,7 +871,7 @@ window.updateIndicatorValues = updateIndicatorValues;
  * следует передавать значение null (а не фильтровать элементы), иначе логические индексы разойдутся.
  */
 function syncAll(source) {
-    if (isSyncing) return;
+    if (isSyncing || isApplyingProgrammaticRange) return;
     isSyncing = true;
     const range = source.timeScale().getVisibleLogicalRange();
     if (range) {
@@ -819,13 +889,14 @@ chartMain.timeScale().subscribeVisibleLogicalRangeChange(() => syncAll(chartMain
 // Делегирует переключение/отрисовку индикаторов в IndicatorRenderers.
 // main.js сохраняет роль оркестратора и передаёт только контекст (данные, параметры, графики, callbacks).
 window.toggleIndicator = function(id, isChecked) {
+    const viewportState = captureViewportState();
     const coreDefaults = window.StrategyCore && typeof window.StrategyCore.getDefaultParams === 'function'
         ? window.StrategyCore.getDefaultParams()
         : {};
     const params = { ...coreDefaults, ...(window.Strategy?.params || {}) };
 
     if (window.IndicatorRenderers && typeof window.IndicatorRenderers.toggleIndicator === 'function') {
-        window.IndicatorRenderers.toggleIndicator({
+        const handled = window.IndicatorRenderers.toggleIndicator({
             id,
             isChecked,
             data,
@@ -840,7 +911,8 @@ window.toggleIndicator = function(id, isChecked) {
             LightweightCharts,
             setWorktimeOverlayVisible: window.setWorktimeOverlayVisible
         });
-        return;
+        restoreViewportState(viewportState);
+        return handled;
     }
 
     addLog('IndicatorRenderers не инициализирован');
@@ -1014,6 +1086,7 @@ window.onresize();
 (async function init() {
     // Wait a bit for all scripts to load
     await new Promise(resolve => setTimeout(resolve, 100));
+    initializeStartupPanels();
     
     // Use LocalJsProvider to scan available modules
     const datasets = window.LocalJsProvider ? await window.LocalJsProvider.scanModules() : [];

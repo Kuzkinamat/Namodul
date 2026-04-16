@@ -13,8 +13,7 @@ window.StrategyDefinition = (function() {
         }
 
         // Compile once, reuse on every candle
-        const fullCode = 'const c = arguments[0].c; const i = arguments[0].i; const t = arguments[0].t; const s = arguments[0].s || {}; let buy = 0, sell = 0; ' + logicBody + ' return { buy, sell };';
-        const compiled = new Function(fullCode);
+        const compiled = new Function('c', 'i', 't', 's', 'let buy = 0, sell = 0; ' + logicBody + ' return { buy, sell };');
 
         return function(ctx) {
             if (!ctx) return { buy: 0, sell: 0 };
@@ -25,7 +24,7 @@ window.StrategyDefinition = (function() {
                 const s = ctx.s || {};
                 if (!c || !i) return { buy: 0, sell: 0 };
 
-                const result = compiled.call(null, { c, i, t, s });
+                const result = compiled.call(null, c, i, t, s);
                 return {
                     buy: Number.isFinite(result.buy) ? result.buy : 0,
                     sell: Number.isFinite(result.sell) ? result.sell : 0
@@ -41,13 +40,13 @@ window.StrategyDefinition = (function() {
         useWorktime: true,
         
         useBB: true,
-        bbPeriod: 20,
+        bbPeriod: 50,
         bbStdDev: 2,
 
         useMACD: true,
 
-        useSMA: true,
-        smaPeriod: 200,
+        useSMA: false,
+        smaPeriod: 100,
 
         useATR: false,
         atrFastPeriod: 14,
@@ -79,14 +78,26 @@ window.StrategyDefinition = (function() {
 
     const logicSource = `
 // Вход по сигналам из Signals:
-// s.bb    = BB-флат (0|1)
-// s.macd  = MACD-кроссовер (-1|0|+1)
-// s.sma   = SMA200 тренд (-1..+1, > 0 = выше SMA, < 0 = ниже)
-// s.value = результирующий (bb × macd)
+// s.phase = Фаза рынка (0..1, флэт/движение)
+// s.entry = Точка входа (-1..+1, краткосрочный сигнал)
+// s.trend = Долгосрочный тренд (-1..+1)
+// s.valid = Валидный сигнал (составляющий)
 
-// Вход только по тренду: покупаем выше SMA, продаём ниже
-if (s.value >= 1  && s.sma > 0)  buy  = 1;
-if (s.value <= -1 && s.sma < 0) sell = 1;
+// Округление до 0.1
+function roundTo01(val) {
+    return Math.round(val * 10) / 10;
+}
+
+// Вычисляем итоговый result вручную на основе промежуточных сигналов
+const result = s.valid; // Временно используем valid, потом настроите свою формулу
+
+// Вход только по величине итогового result
+if (result >= 1) {
+    buy = roundTo01(result);
+}
+if (result <= -1) {
+    sell = roundTo01(Math.abs(result));
+}
 `;
 
     const evaluateLogic = buildLogicEvaluator(logicSource);
@@ -94,40 +105,54 @@ if (s.value <= -1 && s.sma < 0) sell = 1;
     function buildSignalsEvaluator(source) {
         const logicBody = String(source || '').trim();
         if (!logicBody) {
-            return function() { return { bb: 0, macd: 0, value: 0, trend: 0 }; };
+            return function() { return { phase: 0, entry: 0, trend: 0, valid: 0 }; };
         }
-        const fullCode = 'const c = arguments[0].c; const i = arguments[0].i; const t = arguments[0].t; let signal = 0, signal2 = 0, signal3 = 0, signal4 = 0; ' + logicBody + ' return { bb: signal, macd: signal2, value: signal3, sma: signal4 };';
-        const compiled = new Function(fullCode);
+        // Компилируем код сигналов
+        const compiled = new Function('c', 'i', 't', logicBody + ' return { phase: phaseSignal, entry: entrySignal, trend: trendSignal, valid: validSignal };');
         return function(ctx) {
-            if (!ctx) return { bb: 0, macd: 0, value: 0, sma: 0 };
+            if (!ctx) return { phase: 0, entry: 0, trend: 0, valid: 0 };
             try {
                 const c = typeof ctx.c === 'function' ? ctx.c : null;
                 const i = ctx.i || {};
                 const t = typeof ctx.t === 'function' ? ctx.t : null;
-                if (!c || !i) return { bb: 0, macd: 0, value: 0, sma: 0 };
-                const result = compiled.call(null, { c, i, t });
+                if (!c || !i) return { phase: 0, entry: 0, trend: 0, valid: 0 };
+                const result = compiled.call(null, c, i, t);
                 return {
-                    bb:    Number.isFinite(result.bb)    ? result.bb    : 0,
-                    macd:  Number.isFinite(result.macd)  ? result.macd  : 0,
-                    value: Number.isFinite(result.value) ? result.value : 0,
-                    sma:   Number.isFinite(result.sma)   ? result.sma   : 0
+                    phase: Number.isFinite(result.phase) ? result.phase : 0,
+                    entry: Number.isFinite(result.entry) ? result.entry : 0,
+                    trend: Number.isFinite(result.trend) ? result.trend : 0,
+                    valid: Number.isFinite(result.valid) ? result.valid : 0
                 };
             } catch (err) {
-                console.error('Signals eval error:', err);
-                return { bb: 0, macd: 0, value: 0, sma: 0 };
+                console.error('Signals eval error:', err.message, err.stack);
+                return { phase: 0, entry: 0, trend: 0, valid: 0 };
             }
         };
     }
 
     const signalsSource = `
-// signal  → s.bb    (BB-флат: 0|1)
-// signal2 → s.macd  (MACD-кроссовер: -1|0|+1)
-// signal3 → s.value (результирующий = bb × macd)
-// signal4 → s.trend (SMA200 тренд: +1 выше, -1 ниже)
+// === НОВЫЕ ИМЕНА СИГНАЛОВ ===
+// phaseSignal → s.phase (фаза рынка: 0..1, флэт/движение)
+// entrySignal → s.entry (точка входа: -1..+1, краткосрочный)
+// trendSignal → s.trend (долгосрочный тренд: -1..+1)
+// validSignal → s.valid (валидный составляющий сигнал)
 
-// --- BB флат ---
+// Инициализация переменных сигналов
+let phaseSignal = 0;
+let entrySignal = 0;
+let trendSignal = 0;
+let validSignal = 0;
+
+// === Множители для сигналов ===
+const wPhase = 1.0;   // Множитель для фазы рынка
+const wEntry = 1.0;   // Множитель для точки входа
+const wTrend = 1.0;   // Множитель для тренда
+
+// Проверка доступности функций - если функций нет, переменные останутся 0
+if (typeof i.bb === 'function' && typeof i.macd === 'function' && typeof c === 'function') {
+
+// --- Флэт (узкий диапазон BB) ---
 const bb0 = i.bb(0);
-let isFlat = false;
 if (bb0 && bb0.m > 0) {
     const bwNorm = (bb0.u - bb0.l) / bb0.m;
     const WINDOW = 50;
@@ -135,37 +160,48 @@ if (bb0 && bb0.m > 0) {
     for (let lag = 1; lag < WINDOW; lag++) {
         const b = i.bb(-lag);
         if (b && b.m > 0) {
-            const w = (b.u - b.l) / b.m;
-            if (w > maxBw) maxBw = w;
+            const bw = (b.u - b.l) / b.m;
+            if (bw > maxBw) maxBw = bw;
         }
     }
     const relBw = maxBw > 0 ? bwNorm / maxBw : 1;
-    isFlat = relBw > 0.3 && relBw <= 0.7;
+    // Плавная функция: пик при relBw=0.5, спад к краям
+    // Используем колоколообразную функцию
+    const center = 0.5;
+    const width = 0.4;  // ширина "колокола"
+    const distance = Math.abs(relBw - center);
+    phaseSignal = distance < width ? (1 - (distance / width)) : 0;
 }
-signal = isFlat ? 1 : 0;
 
-// --- MACD кроссовер ---
+// --- MACD: два сигнала ---
+// 1. macdDirection - направление и сила (сама MACD линия, нормализованная)
+// 2. macdConvergence - схождение линий (как быстро гистограмма уменьшается)
 const mac0 = i.macd(0);
 const mac1 = i.macd(-1);
-if (mac0 && mac1 &&
-    mac0.histogram !== null && mac0.histogram !== undefined &&
-    mac1.histogram !== null && mac1.histogram !== undefined &&
-    Math.sign(mac0.histogram) !== Math.sign(mac1.histogram) && mac1.histogram !== 0) {
-    signal2 = mac0.histogram > 0 ? 1 : -1;
-}
-
-// --- SMA200 тренд (сырая разница close - SMA200) ---
-const sma200 = i.sma(0);
-const price = c(0);
-if (sma200 !== null && sma200 !== undefined && price) {
-    const smaValue = typeof sma200 === 'object' ? sma200.value : sma200;
-    if (smaValue !== null && smaValue !== undefined) {
-        signal4 = price.close - smaValue;
+if (mac0 && mac0.histogram !== null && mac0.histogram !== undefined) {
+    const MACD_WINDOW = 50;
+    
+    // --- Направление (нормализуем гистограмму за окно) ---
+    let maxAbsHist = Math.abs(mac0.histogram);
+    for (let lag = 1; lag < MACD_WINDOW; lag++) {
+        const m = i.macd(-lag);
+        if (m && m.histogram !== null && m.histogram !== undefined) {
+            const absH = Math.abs(m.histogram);
+            if (absH > maxAbsHist) maxAbsHist = absH;
+        }
+    }
+    if (maxAbsHist > 0) {
+        entrySignal = mac0.histogram / maxAbsHist;
+        entrySignal = Math.max(-1, Math.min(1, entrySignal));
     }
 }
 
-// --- Результирующий ---
-signal3 = signal * signal2;
+    // --- Тренд (пока заглушка, настроите позже) ---
+    trendSignal = 0;
+
+    // --- Валидный сигнал (взвешенная сумма) ---
+    validSignal = (phaseSignal * wPhase) + (entrySignal * wEntry) + (trendSignal * wTrend);
+}
 `;
 
     const evaluateSignals = buildSignalsEvaluator(signalsSource);

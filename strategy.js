@@ -464,16 +464,10 @@
                 return;
             }
 
-            log('Launch strategy ...');
-
             // Даем UI отрисовать лог до тяжелых синхронных расчетов
             setTimeout(() => {
-                // Сохранить диапазон ДО любых операций, которые вызывают fitContent/syncAll
-                const _ts = window.chartMain && window.chartMain.timeScale
-                    ? window.chartMain.timeScale()
-                    : null;
-                const _savedRange = _ts && typeof _ts.getVisibleLogicalRange === 'function'
-                    ? _ts.getVisibleLogicalRange()
+                const viewportState = typeof window.captureViewportState === 'function'
+                    ? window.captureViewportState()
                     : null;
 
                 if (typeof window.applyAllSettings === 'function') {
@@ -521,10 +515,8 @@
                     window.updateBalance();
                 }
 
-                // Восстановить диапазон: fitContent внутри updateBalance/applyAllSettings
-                // сбивает позицию через syncAll
-                if (_ts && _savedRange && typeof _ts.setVisibleLogicalRange === 'function') {
-                    _ts.setVisibleLogicalRange(_savedRange);
+                if (viewportState && typeof window.restoreViewportState === 'function') {
+                    window.restoreViewportState(viewportState);
                 }
             }, 0);
         },

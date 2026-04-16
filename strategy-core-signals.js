@@ -250,16 +250,16 @@ window.StrategyCoreSignals = (function() {
                 try {
                     const sv = evaluateSignalsForEntry(runtimeContext);
                     runtimeContext.s = {
-                        bb:    sv && Number.isFinite(sv.bb)    ? sv.bb    : 0,
-                        macd:  sv && Number.isFinite(sv.macd)  ? sv.macd  : 0,
-                        value: sv && Number.isFinite(sv.value) ? sv.value : 0,
-                        sma: sv && Number.isFinite(sv.sma) ? sv.sma : 0
+                        phase: sv && Number.isFinite(sv.phase) ? sv.phase : 0,
+                        entry: sv && Number.isFinite(sv.entry) ? sv.entry : 0,
+                        trend: sv && Number.isFinite(sv.trend) ? sv.trend : 0,
+                        valid: sv && Number.isFinite(sv.valid) ? sv.valid : 0
                     };
                 } catch (e) {
-                    runtimeContext.s = { bb: 0, macd: 0, value: 0, sma: 0 };
+                    runtimeContext.s = { phase: 0, entry: 0, trend: 0, valid: 0 };
                 }
             } else {
-                runtimeContext.s = { bb: 0, macd: 0, value: 0, sma: 0 };
+                runtimeContext.s = { phase: 0, entry: 0, trend: 0, valid: 0 };
             }
 
             let result;
@@ -288,7 +288,8 @@ window.StrategyCoreSignals = (function() {
                     type: 'buy',
                     price: entryCandle.o,
                     buyStrength: buy,
-                    sellStrength: 0
+                    sellStrength: 0,
+                    stake: buy  // Размер позиции = величина сигнала
                 });
             } else if (sell >= 1) {
                 signals.push({
@@ -296,7 +297,8 @@ window.StrategyCoreSignals = (function() {
                     type: 'sell',
                     price: entryCandle.o,
                     buyStrength: 0,
-                    sellStrength: sell
+                    sellStrength: sell,
+                    stake: sell  // Размер позиции = величина сигнала
                 });
             }
 
@@ -353,27 +355,14 @@ window.StrategyCoreSignals = (function() {
             let val = 0, val2 = 0, val3 = 0, val4 = 0;
             try {
                 const r = evaluateSignals(runtimeContext);
-                val  = r && Number.isFinite(r.bb)    ? r.bb    : 0;
-                val2 = r && Number.isFinite(r.macd)  ? r.macd  : 0;
-                val3 = r && Number.isFinite(r.value) ? r.value : 0;
-                val4 = r && Number.isFinite(r.sma) ? r.sma : 0;
+                val  = r && Number.isFinite(r.phase) ? r.phase : 0;
+                val2 = r && Number.isFinite(r.entry) ? r.entry : 0;
+                val3 = r && Number.isFinite(r.valid) ? r.valid : 0;
+                val4 = r && Number.isFinite(r.trend) ? r.trend : 0;
             } catch (err) {
                 // skip
             }
-            result.push({ time: normalizedData[i].time, value: val, value2: val2, composite: val3, sma: val4 });
-        }
-
-        // Normalize sma values to (-1, 1] using rolling max over 200 bars
-        const NORM_WINDOW = 200;
-        for (let i = 0; i < result.length; i++) {
-            const raw = result[i].sma;
-            if (raw === 0) continue;
-            let maxAbs = Math.abs(raw);
-            for (let j = Math.max(0, i - NORM_WINDOW + 1); j < i; j++) {
-                const a = Math.abs(result[j].sma);
-                if (a > maxAbs) maxAbs = a;
-            }
-            result[i].sma = maxAbs > 0 ? raw / maxAbs : 0;
+            result.push({ time: normalizedData[i].time, value: val, value2: val2, composite: val3, trend: val4 });
         }
 
         return result;

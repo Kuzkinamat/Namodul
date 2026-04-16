@@ -919,25 +919,26 @@
             '',
             '    function buildSignalsEvaluator(source) {',
             "        const logicBody = String(source || '').trim();",
-            '        if (!logicBody) { return function() { return { bb: 0, macd: 0, value: 0 }; }; }',
-            '        const fullCode = "const c = arguments[0].c; const i = arguments[0].i; const t = arguments[0].t; let signal = 0, signal2 = 0, signal3 = 0, signal4 = 0; " + logicBody + " return { bb: signal, macd: signal2, value: signal3, sma: signal4 };";',
+            '        if (!logicBody) { return function() { return { bb: 0, macd: 0, value: 0, sma: 0 }; }; }',
+            '        const fullCode = "const c = arguments[0].c; const i = arguments[0].i; const t = arguments[0].t; let bbSignal = 0, macdSignal = 0, compositeSignal = 0, smaSignal = 0; " + logicBody + " return { bb: bbSignal, macd: macdSignal, value: compositeSignal, sma: smaSignal };";',
             '        const compiled = new Function(fullCode);',
             '        return function(ctx) {',
-            '            if (!ctx) return { bb: 0, macd: 0, value: 0 };',
+            '            if (!ctx) return { bb: 0, macd: 0, value: 0, sma: 0 };',
             '            try {',
             '                const c = typeof ctx.c === "function" ? ctx.c : null;',
             '                const i = ctx.i || {};',
             '                const t = typeof ctx.t === "function" ? ctx.t : null;',
-            '                if (!c || !i) return { bb: 0, macd: 0, value: 0 };',
+            '                if (!c || !i) return { bb: 0, macd: 0, value: 0, sma: 0 };',
             '                const result = compiled.call(null, { c, i, t });',
             '                return {',
             '                    bb:    Number.isFinite(result.bb)    ? result.bb    : 0,',
             '                    macd:  Number.isFinite(result.macd)  ? result.macd  : 0,',
-            '                    value: Number.isFinite(result.value) ? result.value : 0',
+            '                    value: Number.isFinite(result.value) ? result.value : 0,',
+            '                    sma:   Number.isFinite(result.sma)   ? result.sma   : 0',
             '                };',
             '            } catch (err) {',
             '                console.error("Signals evaluation error:", err.message);',
-            '                return { bb: 0, macd: 0, value: 0 };',
+            '                return { bb: 0, macd: 0, value: 0, sma: 0 };',
             '            }',
             '        };',
             '    }',
@@ -1091,16 +1092,14 @@
 
     function rerunStrategyPreview() {
         if (window.Strategy && typeof window.Strategy.testStrategy === 'function') {
-            const chart = window.chartMain;
-            const ts = chart && typeof chart.timeScale === 'function' ? chart.timeScale() : null;
-            const previousRange = ts && typeof ts.getVisibleLogicalRange === 'function'
-                ? ts.getVisibleLogicalRange()
+            const viewportState = typeof window.captureViewportState === 'function'
+                ? window.captureViewportState()
                 : null;
 
             window.Strategy.testStrategy();
 
-            if (ts && previousRange && typeof ts.setVisibleLogicalRange === 'function') {
-                ts.setVisibleLogicalRange(previousRange);
+            if (viewportState && typeof window.restoreViewportState === 'function') {
+                window.restoreViewportState(viewportState);
             }
         } else if (window.data && window.data.length > 0) {
             refreshActiveIndicators();
@@ -1215,6 +1214,62 @@
         selectStrategy(fileName, { forceReload: true, apply: false });
     }
 
+    function exportStrategyCode() {
+        const editors = getEditorMap();
+        if (!editors.ind || !editors.mm || !editors.hours || !editors.code) {
+            log('Ошибка: текстовые поля редактора не найдены');
+            return;
+        }
+
+        const indCode = editors.ind.value.trim();
+        const mmCode = editors.mm.value.trim();
+        const hoursCode = editors.hours.value.trim();
+        const signalsCode = editors.signals ? editors.signals.value.trim() : '';
+        const strategyCode = editors.code.value.trim();
+        
+        if (!indCode || !mmCode || !hoursCode || !strategyCode) {
+            log('Один из редакторов пуст - экспорт невозможен');
+            return;
+        }
+
+        try {
+            const mainCode = buildUnifiedStrategySource({
+                ind: indCode,
+                mm: mmCode,
+                hours: hoursCode,
+                signals: signalsCode,
+                code: strategyCode
+            });
+
+            // Get current strategy name for filename
+            const currentStrategy = getCurrentStrategyDefinition();
+            const baseName = currentStrategy && currentStrategy.file 
+                ? currentStrategy.file.replace(/\.js$/, '')
+                : 'strategy-export';
+            const fileName = baseName + '.js';
+
+            // Create download
+            const blob = new Blob([mainCode], { type: 'text/javascript' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            
+            // Cleanup
+            setTimeout(() => {
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }, 100);
+            
+            log('Стратегия экспортирована: ' + fileName);
+        } catch (err) {
+            log('Ошибка экспорта: ' + err.message);
+        }
+    }
+
     function applyAllSettings() {
         refreshActiveIndicators({ includeBalance: false });
     }
@@ -1235,6 +1290,7 @@
         applyStrategyCode,
         selectStrategy,
         resetStrategyCode,
+        exportStrategyCode,
         applyAllSettings
     };
 
@@ -1242,6 +1298,7 @@
     window.applyStrategyCode = applyStrategyCode;
     window.selectStrategy = selectStrategy;
     window.resetStrategyCode = resetStrategyCode;
+    window.exportStrategyCode = exportStrategyCode;
     window.applyAllSettings = applyAllSettings;
     window.focusStrategyEditorWindow = focusStrategyEditorWindow;
     window.toggleStrategyEditorWindow = toggleStrategyEditorWindow;

@@ -151,6 +151,7 @@ window.StrategyCoreContext = (function() {
             if (name === 'bb') return { u: null, m: null, l: null };
             if (name === 'stochastic') return { k: null, d: null };
             if (name === 'macd') return { macd: null, signal: null, histogram: null };
+            if (name === 'sma') return { time: null, value: null };
             return null;
         }
 
@@ -294,6 +295,7 @@ window.StrategyCoreContext = (function() {
             data,
             indicators,
             tradeHistory: tradeHistory || [],
+            params: activeParams,
             c: createCandleAccessor(c),
             ind,
             i: i_namespace_result,
